@@ -1,0 +1,175 @@
+library(ggplot2)
+library(gridExtra)
+## Multiple Groups
+Model1 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Black_0.1.rds")
+Model2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Hispanic_0.1.rds")
+Model3 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Asian_0.1.rds")
+Model4 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Black_0.5.rds")
+Model5 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Hispanic_0.5.rds")
+Model6 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Asian_0.5.rds")
+Model7 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Black_0.9.rds")
+Model8 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Hispanic_0.9.rds")
+Model9 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Asian_0.9.rds")
+
+
+model_print <- function(Model){
+  
+  x <- Model$tTable
+  Names <- rownames(x)
+  Estimates <- x[,1] * 1000
+  lower <- x[,3] * 1000
+  upper <- x[,4] * 1000
+  
+  p_values <- x[,5]
+  significance <- ifelse(p_values < 0.001, "***",
+                         ifelse(p_values < 0.01, "**",
+                                ifelse(p_values < 0.05, "*", "")))
+  
+  df_estimates <- data.frame(Names = Names, Estimates = Estimates,
+                             lower = lower, upper = upper, p_values = p_values,
+                             significance = significance)
+  
+  # Formatted <- with(df_estimates, paste(sprintf("%.4f", Estimates), significance, "\n[", sprintf("%.2f", lower), ", ", sprintf("%.2f", upper), "]", sep = ""))
+  cat(sprintf("%s \n%.2f%s \n[%.2f, %.2f]\n\n", Names, Estimates, significance, lower, upper))
+}
+
+model_print(Model9)
+
+
+slope_income <- data.frame(category = rep(c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),3),
+                           point_estimate = c(Model1$tTable[5,1],Model2$tTable[5,1],Model3$tTable[5,1],
+                                              Model4$tTable[5,1],Model5$tTable[5,1],Model6$tTable[5,1],
+                                              Model7$tTable[5,1],Model8$tTable[5,1],Model9$tTable[5,1])*1000,
+                           lower = c(Model1$tTable[5,3],Model2$tTable[5,3],Model3$tTable[5,3],
+                                     Model4$tTable[5,3],Model5$tTable[5,3],Model6$tTable[5,3],
+                                     Model7$tTable[5,3],Model8$tTable[5,3],Model9$tTable[5,3])*1000,
+                           upper = c(Model1$tTable[5,4],Model2$tTable[5,4],Model3$tTable[5,4],
+                                     Model4$tTable[5,4],Model5$tTable[5,4],Model6$tTable[5,4],
+                                     Model7$tTable[5,4],Model8$tTable[5,4],Model9$tTable[5,4])*1000,
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+
+p2 <- ggplot(data = slope_income, 
+       aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Race/Ethnicity",
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption per household (Kwh)", y = "Quantile") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+p2
+
+
+
+## Multiple Groups
+Model1 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Black_0.1.rds")
+Model2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Hispanic_0.1.rds")
+Model3 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Asian_0.1.rds")
+Model4 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Black_0.5.rds")
+Model5 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Hispanic_0.5.rds")
+Model6 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Asian_0.5.rds")
+Model7 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Black_0.9.rds")
+Model8 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Hispanic_0.9.rds")
+Model9 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Asian_0.9.rds")
+
+slope_income <- data.frame(category = rep(c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),3),
+                           point_estimate = c(Model1$tTable[7,1],Model2$tTable[7,1],Model3$tTable[7,1],
+                                              Model4$tTable[7,1],Model5$tTable[7,1],Model6$tTable[7,1],
+                                              Model7$tTable[7,1],Model8$tTable[7,1],Model9$tTable[7,1]),
+                           lower = c(Model1$tTable[7,3],Model2$tTable[7,3],Model3$tTable[7,3],
+                                     Model4$tTable[7,3],Model5$tTable[7,3],Model6$tTable[7,3],
+                                     Model7$tTable[7,3],Model8$tTable[7,3],Model9$tTable[7,3]),
+                           upper = c(Model1$tTable[7,4],Model2$tTable[7,4],Model3$tTable[7,4],
+                                     Model4$tTable[7,4],Model5$tTable[7,4],Model6$tTable[7,4],
+                                     Model7$tTable[7,4],Model8$tTable[7,4],Model9$tTable[7,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+
+p3 <- ggplot(data = slope_income, 
+             aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Race/Ethnicity",
+                     labels = c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption (Mwh)", y = "Quantile",
+       title = "ICE (Total Energy)") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+p3
+
+
+
+
+
+grid.arrange(p2,p3,ncol=1)
+
+
+
+
+
+
+
+
+
+
+
+## Multiple Groups
+Model1 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Black_0.1.rds")
+Model2 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Hispanic_0.1.rds")
+Model3 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Asian_0.1.rds")
+Model4 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Black_0.5.rds")
+Model5 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Hispanic_0.5.rds")
+Model6 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Asian_0.5.rds")
+Model7 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Black_0.9.rds")
+Model8 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Hispanic_0.9.rds")
+Model9 <- readRDS("/home/xz578/TEJM/LQMM3/ICE_two/model_summary_HICDD_ICE_income_Asian_0.9.rds")
+
+slope_income <- data.frame(category = rep(c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),3),
+                           point_estimate = c(Model1$tTable[7,1],Model2$tTable[7,1],Model3$tTable[7,1],
+                                              Model4$tTable[7,1],Model5$tTable[7,1],Model6$tTable[7,1],
+                                              Model7$tTable[7,1],Model8$tTable[7,1],Model9$tTable[7,1]),
+                           lower = c(Model1$tTable[7,3],Model2$tTable[7,3],Model3$tTable[7,3],
+                                     Model4$tTable[7,3],Model5$tTable[7,3],Model6$tTable[7,3],
+                                     Model7$tTable[7,3],Model8$tTable[7,3],Model9$tTable[7,3]),
+                           upper = c(Model1$tTable[7,4],Model2$tTable[7,4],Model3$tTable[7,4],
+                                     Model4$tTable[7,4],Model5$tTable[7,4],Model6$tTable[7,4],
+                                     Model7$tTable[7,4],Model8$tTable[7,4],Model9$tTable[7,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+
+ggplot(data = slope_income, 
+       aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Race/Ethnicity",
+                     labels = c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption (Mwh)", y = "Quantile") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+

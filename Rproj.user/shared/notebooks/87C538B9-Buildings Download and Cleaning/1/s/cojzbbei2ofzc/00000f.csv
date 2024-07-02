@@ -1,0 +1,26 @@
+"0","################################################################################"
+"0","################################ load library ##################################"
+"0","################################################################################"
+"0",""
+"0","#library(geojsonR)"
+"0","#library(geojsonsf)"
+"0","library(maptools)"
+"2","Loading required package: sp
+"
+"2","Checking rgeos availability: TRUE
+Please note that 'maptools' will be retired by the end of 2023,
+plan transition at your earliest convenience;
+some functionality will be moved to 'sp'.
+"
+"0","library(raster)"
+"0","#library(rgdal)"
+"0","#library(rgeos)"
+"0","#library(arsenal)"
+"0","library(here)"
+"0","library(sf)"
+"0","library(sp)"
+"0","library(tidycensus) "
+"0","library(here)"
+"0","sf_use_s2(FALSE)"
+"0","################################################################################"
+"0","################################################################################"

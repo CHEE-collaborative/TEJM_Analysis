@@ -1,0 +1,70 @@
+library(lqmm)
+library(tidyverse)
+
+
+
+#Median Income thresholds: 50000, 70000, 90000
+
+data_table_cat <- readRDS("/home/xz578/TEJM/LQMM_Comm/data_table_cat.rds")%>%
+  rename(total_accounts = number_of_accounts) %>%
+  mutate(total_accounts = as.numeric(total_accounts)) %>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown")
+
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_cat <- data_table_cat %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    True_Energy/Households,
+                                    True_Energy/total_accounts
+  )) %>%
+  filter(!is.na(Normalized_Energy))
+
+taus <- c(1,5,9)/10
+
+for(tau in taus){
+  print(tau)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_cat,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM_Comm/Category/model_summary_HICDD_categorical_income_",tau,".rds"))
+
+}
+
+taus <- c(1:9)/10
+for(tau in taus){
+  print(tau)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_cat,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM_Comm/Category/model_imputed_",tau,".rds"))
+  
+  
+}

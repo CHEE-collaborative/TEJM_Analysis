@@ -1,0 +1,769 @@
+# Model Print
+model_print <- function(Model){
+  
+  x <- Model$tTable
+  Names <- rownames(x)
+  Estimates <- x[,1] * 1000
+  lower <- x[,3] * 1000
+  upper <- x[,4] * 1000
+  
+  p_values <- x[,5]
+  significance <- ifelse(p_values < 0.001, "***",
+                         ifelse(p_values < 0.01, "**",
+                                ifelse(p_values < 0.05, "*", "")))
+  
+  df_estimates <- data.frame(Names = Names, Estimates = Estimates,
+                             lower = lower, upper = upper, p_values = p_values,
+                             significance = significance)
+  
+  return(sprintf("%s: \n%.2f%s \n[%.2f, %.2f]\n", Names, Estimates, significance, lower, upper))
+}
+
+model_print_lmer <- function(Model){
+  
+  x <- Model$coefficients
+  Names <- rownames(x)
+  Estimates <- x[,1] * 1000
+  lower <- x[,1]*1000 - 1.96*x[,2]*1000
+  upper <- x[,1]*1000 + 1.96*x[,2]*1000
+  
+  p_values <- 2 * (1 - pnorm(abs(x[,3])))
+  significance <- ifelse(p_values < 0.001, "***",
+                         ifelse(p_values < 0.01, "**",
+                                ifelse(p_values < 0.05, "*", "")))
+  
+  df_estimates <- data.frame(Names = Names, Estimates = Estimates,
+                             lower = lower, upper = upper, p_values = p_values,
+                             significance = significance)
+  
+  return(sprintf("%s: \n%.2f%s \n[%.2f, %.2f]\n", Names, Estimates, significance, lower, upper))
+}
+
+# Energy Overview
+Figure_1 <- function(Merged_Data){
+  
+  ## Group Average 
+  data_energy <- Merged_Data %>%
+    group_by(Median_Income_cat,year, month) %>%
+    summarize(Total_Energy = sum(Total_Energy), Households = sum(Households)) %>%
+    mutate(normalized_energy_use = Total_Energy/Households*1000) %>%
+    mutate(times = paste0(month, ".",year)) %>%
+    mutate(times = factor(times)) %>%
+    mutate(times2 = ifelse(month == 5, "May", 
+                           ifelse(month == 6, "Jun", 
+                                  ifelse(month == 7, "Jul", 
+                                         ifelse(month == 8, "Aug", 
+                                                ifelse(month == 9, "Sep", NA)))))) %>%
+    mutate(times2 = factor(times2, levels = c("May", "Jun", "Jul", "Aug", "Sep")))
+  
+  levels(data_energy$Median_Income_cat) <- c("< $50,000","$50,000-$69,999", "$70,000-$89,999", ">= $90,000")
+  
+  p1 <- ggplot(data_energy, aes(x = times2, y = normalized_energy_use, 
+                                color = Median_Income_cat, 
+                                group = Median_Income_cat,
+                                shape = Median_Income_cat)) +
+    geom_line(size = 1) +
+    geom_point(size = 2) +
+    labs(#title = "Average Energy Use per",
+      x = "Month",
+      y = "Average energy use per household (Kwh)",
+      color = "Income Groups",
+      shape = "Income Groups") +
+    scale_shape_manual(values = c(16, 17, 18,15)) +
+    scale_x_discrete(breaks = function(x) x[seq_along(x) %% 2 == 1]) +
+    facet_wrap(~ year, scales = "free_x") +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(size = 12, face = "bold",hjust = 1),  
+      axis.text.y = element_text(size = 12, face = "bold"),  
+      axis.title.x = element_text(size = 14, face = "bold"), 
+      axis.title.y = element_text(size = 14, face = "bold"),
+      strip.text = element_text(size = 14, face = "bold"),
+      legend.position = c(1, 0), 
+      # legend.position = "none",
+      legend.justification = c(1.75, -0.6), 
+      # legend.key.size = unit(1.5, "lines"),
+      legend.text = element_text(size = 12),  # Increase legend text size
+      legend.title = element_text(size = 14))
+  
+  ggsave(file.path(here(), "Outputs","GroupAverage.png"), plot = p1, width = 16, height = 8, dpi = 300)
+  
+}
+
+Main_Model <- function(Merged_Data){
+  
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = Merged_Data,
+                          tau = 0.5,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Main_Model_Income <- summary(qm.effect_HICDD)
+  writeLines(model_print(Main_Model_Income), file.path(here(), "Outputs","Main_Model_Income.txt"))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Main_Model_ICE_Black <- summary(qm.effect_HICDD)
+  writeLines(model_print(Main_Model_ICE_Black), file.path(here(), "Outputs","Main_Model_ICE_Black.txt"))
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+
+  Main_Model_ICE_Hispanic <- summary(qm.effect_HICDD)
+  writeLines(model_print(Main_Model_ICE_Hispanic), file.path(here(), "Outputs","Main_Model_ICE_Hispanic.txt"))
+  
+  #ICE_Asian:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Main_Model_ICE_Asian <- summary(qm.effect_HICDD)
+  writeLines(model_print(Main_Model_ICE_Asian), file.path(here(), "Outputs","Main_Model_ICE_Asian.txt"))
+  
+}
+
+Sens_I <- function(Merged_Data){
+  
+  Merged_Data <- Merged_Data %>%
+    filter(year != 2020)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = Merged_Data,
+                          tau = 0.5,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_I_Income <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_I_Income), file.path(here(), "Outputs","Sensitivity_I_Income.txt"))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_I_ICE_Black <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_I_ICE_Black), file.path(here(), "Outputs","Sensitivity_I_ICE_Black.txt"))
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  
+  Sensitivity_I_ICE_Hispanic <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_I_ICE_Hispanic), file.path(here(), "Outputs","Sensitivity_I_ICE_Hispanic.txt"))
+  
+  #ICE_Asian:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_I_ICE_Asian <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_I_ICE_Asian), file.path(here(), "Outputs","Sensitivity_I_ICE_Asian.txt"))
+  
+}
+
+Sens_II <- function(Merged_Data){
+  
+  Merged_Data <- Merged_Data %>%
+    filter(!is.na(True_Energy))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = Merged_Data,
+                          tau = 0.5,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_II_Income <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_Income), file.path(here(), "Outputs","Sensitivity_II_Income.txt"))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_II_ICE_Black <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_ICE_Black), file.path(here(), "Outputs","Sensitivity_II_ICE_Black.txt"))
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  
+  Sensitivity_II_ICE_Hispanic <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_ICE_Hispanic), file.path(here(), "Outputs","Sensitivity_II_ICE_Hispanic.txt"))
+  
+  #ICE_Asian:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_II_ICE_Asian <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_ICE_Asian), file.path(here(), "Outputs","Sensitivity_II_ICE_Asian.txt"))
+  
+}
+
+Sens_III <- function(Merged_Data){
+  
+  
+  Merged_Data <- Merged_Data %>%
+    filter(!is.na(True_Energy))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = Merged_Data,
+                          tau = 0.5,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_II_Income <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_Income), file.path(here(), "Outputs","Sensitivity_II_Income.txt"))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_II_ICE_Black <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_ICE_Black), file.path(here(), "Outputs","Sensitivity_II_ICE_Black.txt"))
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  
+  Sensitivity_II_ICE_Hispanic <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_ICE_Hispanic), file.path(here(), "Outputs","Sensitivity_II_ICE_Hispanic.txt"))
+  
+  #ICE_Asian:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_II_ICE_Asian <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_II_ICE_Asian), file.path(here(), "Outputs","Sensitivity_II_ICE_Asian.txt"))
+  
+}
+Sens_III <- function(Energy_Community){
+  Merged_data <- Community_Data_Generate(Energy_Community)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = Merged_Data,
+                          tau = 0.5,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_III_Income <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_III_Income), file.path(here(), "Outputs","Sensitivity_III_Income.txt"))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_III_ICE_Black <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_III_ICE_Black), file.path(here(), "Outputs","Sensitivity_III_ICE_Black.txt"))
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  
+  Sensitivity_III_ICE_Hispanic <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_III_ICE_Hispanic), file.path(here(), "Outputs","Sensitivity_III_ICE_Hispanic.txt"))
+  
+  #ICE_Asian:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  Sensitivity_III_ICE_Asian <- summary(qm.effect_HICDD)
+  writeLines(model_print(Sensitivity_III_ICE_Asian), file.path(here(), "Outputs","Sensitivity_III_ICE_Asian.txt"))
+  
+  
+  
+}
+
+Sens_IV <- function(Merged_Data){
+  
+  
+  lm.effect_HICDD <- lmer(Normalized_Energy ~ HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat + 
+                            (1 | groups_county), 
+                          data = Merged_Data)
+  
+  Sensitivity_IV_Income <- summary(lm.effect_HICDD)
+  writeLines(model_print_lmer(Sensitivity_IV_Income), file.path(here(), "Outputs","Sensitivity_IV_Income.txt"))
+  
+  lm.effect_HICDD <- lmer(Normalized_Energy ~ HICDD +
+                              Avg_Household_Size +
+                              ICE_income_Black +
+                              HICDD*ICE_income_Black +
+                              (1 | groups_county),
+                            data = Merged_Data) 
+  
+  Sensitivity_IV_ICE_Black <- summary(lm.effect_HICDD)
+  writeLines(model_print_lmer(Sensitivity_IV_ICE_Black), file.path(here(), "Outputs","Sensitivity_IV_ICE_Black.txt"))
+  
+  #ICE_Hispanic:
+  lm.effect_HICDD <- lmer(Normalized_Energy ~ HICDD +
+                              Avg_Household_Size +
+                              ICE_income_Hispanic +
+                              HICDD*ICE_income_Hispanic +
+                              (1 | groups_county),
+                            data = Merged_Data) 
+  
+  Sensitivity_IV_ICE_Hispanic <- summary(lm.effect_HICDD)
+  writeLines(model_print_lmer(Sensitivity_IV_ICE_Hispanic), file.path(here(), "Outputs","Sensitivity_IV_ICE_Hispanic.txt"))
+  
+  #ICE_Asian:
+  lm.effect_HICDD <- lmer(Normalized_Energy ~ HICDD +
+                              Avg_Household_Size +
+                              ICE_income_Asian +
+                              HICDD*ICE_income_Asian +
+                              (1 | groups_county),
+                            data = Merged_Data) 
+  
+  Sensitivity_IV_ICE_Asian <- summary(lm.effect_HICDD)
+  writeLines(model_print_lmer(Sensitivity_IV_ICE_Asian), file.path(here(), "Outputs","Sensitivity_IV_ICE_Asian.txt"))
+  
+}
+
+Community_Data_Generate <- function(Energy_community){
+  
+  sf_use_s2(FALSE)
+  census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+  community_energy_data <- Energy_community %>% 
+    dplyr::select(ZCTA5CE10,com_name,county_name,com_type,geometry) %>% 
+    unique() %>% 
+    st_drop_geometry() %>% filter(!is.na(value))
+  monthly_data <- community_energy_data %>% 
+    mutate(value = as.numeric(value)) %>% 
+    rename(GEOID = ZCTA5CE10) %>% 
+    mutate(year = as.numeric(year),
+           month = as.numeric(month)) %>% 
+    rename(True_Energy = value)
+  
+  GEOGRAPHIC_RESOLUTION = "zcta"
+  
+  get_acs_decennial <- function(geography,geometry = FALSE){
+    acs_year <- get_decennial(
+      geography = geography,
+      variables = c("Total_pop" = "P001001",
+                    "White" = "P005003",
+                    "Black" = "P005004",
+                    "Asian" = "P005006",
+                    "Hispanic" = "P005010",
+                    "Households" = "H003001"),
+      year = 2010,
+      output = "wide",
+      geometry = geometry,
+      state = 36
+    ) %>%
+      #st_transform(crs = st_crs(4326)) %>%
+      # filter(!st_is_empty(.)) %>%
+      mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+             Size_per_House = Total_pop/Households)
+    return(acs_year)
+  }
+  
+  get_acs_5year <- function(geography,year){
+    acs_year <- get_acs(
+      geography = geography,
+      variables = c("Median_Income_Household" = "B19013_001E",
+                    "Total_pop" = "B01001_001E",
+                    "White" = "B03002_003E",
+                    "Black" = "B03002_004E",
+                    "Asian" = "B03002_006E",
+                    "Hispanic" = "B03001_003E",
+                    "Households" = "B11001_001E",
+                    "Avg_Household_Size" = "B25010_001E",
+                    "Household_Income_All" = "B19001_001E",
+                    "Household_Income_All_low1" = "B19001_002E",
+                    "Household_Income_All_low2" = "B19001_003E",
+                    "Household_Income_All_low3" = "B19001_004E",
+                    "Household_Income_All_high1" = "B19001_014E",
+                    "Household_Income_All_high2" = "B19001_015E",
+                    "Household_Income_All_high3" = "B19001_016E",
+                    "Household_Income_All_high4" = "B19001_017E",
+                    "Household_Income_White" = "B19001H_001E",
+                    "Household_Income_White_high1" = "B19001H_014E",
+                    "Household_Income_White_high2" = "B19001H_015E",
+                    "Household_Income_White_high3" = "B19001H_016E",
+                    "Household_Income_White_high4" = "B19001H_017E",
+                    "Household_Income_Black" = "B19001B_001E",
+                    "Household_Income_Black_low1" = "B19001B_002E",
+                    "Household_Income_Black_low2" = "B19001B_003E",
+                    "Household_Income_Black_low3" = "B19001B_004E",
+                    "Household_Income_Hispanic" = "B19001I_001E",
+                    "Household_Income_Hispanic_low1" = "B19001I_002E",
+                    "Household_Income_Hispanic_low2" = "B19001I_003E",
+                    "Household_Income_Hispanic_low3" = "B19001I_004E",
+                    "Household_Income_Asian" = "B19001D_001E",
+                    "Household_Income_Asian_low1" = "B19001D_002E",
+                    "Household_Income_Asian_low2" = "B19001D_003E",
+                    "Household_Income_Asian_low3" = "B19001D_004E"
+      ),
+      year = year,
+      survey = "acs5",
+      output = "wide",
+      geometry = FALSE,
+      state = 36
+    ) %>%
+      mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+             Size_per_House = Total_pop/Households,
+             All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+             All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+             White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+             Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+             Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+             Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3)
+    #st_transform(crs = st_crs(4326)) %>%
+    #filter(!st_is_empty(.))
+    return(acs_year)
+  }
+  
+  median_income_yearly <- NULL
+  for(year_num in 2016:2019){
+    acs_data_yearly <- get_acs_5year(GEOGRAPHIC_RESOLUTION,year_num) %>%
+      mutate(year = year_num) %>%
+      dplyr::select(GEOID,Median_Income_Household, 
+                    Total_pop,White, Black, Asian, Hispanic, Other,
+                    Households,Size_per_House,Avg_Household_Size,
+                    year,
+                    Household_Income_All,
+                    All_household_income_low,All_household_income_high,
+                    White_household_income_high, Black_household_income_low,
+                    Hispanic_household_income_low, Asian_household_income_low)
+    median_income_yearly <- rbind(median_income_yearly,acs_data_yearly)
+  }
+  
+  ## Median Income of ACS5/ACS1 for NY in 2020 cannot be directly extracted.
+  acs_data_2020 <- get_acs(
+    geography = GEOGRAPHIC_RESOLUTION,
+    variables = c("Median_Income_Household" = "B19013_001E",
+                  "Total_pop" = "B01001_001E",
+                  "White" = "B03002_003E",
+                  "Black" = "B03002_004E",
+                  "Asian" = "B03002_006E",
+                  "Hispanic" = "B03001_003E",
+                  "Households" = "B11001_001E",
+                  "Avg_Household_Size" = "B25010_001E",
+                  "Household_Income_All" = "B19001_001E",
+                  "Household_Income_All_low1" = "B19001_002E",
+                  "Household_Income_All_low2" = "B19001_003E",
+                  "Household_Income_All_low3" = "B19001_004E",
+                  "Household_Income_All_high1" = "B19001_014E",
+                  "Household_Income_All_high2" = "B19001_015E",
+                  "Household_Income_All_high3" = "B19001_016E",
+                  "Household_Income_All_high4" = "B19001_017E",
+                  "Household_Income_White" = "B19001H_001E",
+                  "Household_Income_White_high1" = "B19001H_014E",
+                  "Household_Income_White_high2" = "B19001H_015E",
+                  "Household_Income_White_high3" = "B19001H_016E",
+                  "Household_Income_White_high4" = "B19001H_017E",
+                  "Household_Income_Black" = "B19001B_001E",
+                  "Household_Income_Black_low1" = "B19001B_002E",
+                  "Household_Income_Black_low2" = "B19001B_003E",
+                  "Household_Income_Black_low3" = "B19001B_004E",
+                  "Household_Income_Hispanic" = "B19001I_001E",
+                  "Household_Income_Hispanic_low1" = "B19001I_002E",
+                  "Household_Income_Hispanic_low2" = "B19001I_003E",
+                  "Household_Income_Hispanic_low3" = "B19001I_004E",
+                  "Household_Income_Asian" = "B19001D_001E",
+                  "Household_Income_Asian_low1" = "B19001D_002E",
+                  "Household_Income_Asian_low2" = "B19001D_003E",
+                  "Household_Income_Asian_low3" = "B19001D_004E"),
+    year = 2020,
+    survey = "acs5",
+    output = "wide",
+    geometry = FALSE) %>%
+    filter(GEOID %in% median_income_yearly$GEOID) %>%
+    mutate(year = 2020) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households,
+           All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+           All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+           White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+           Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+           Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+           Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3) %>%
+    dplyr::select(GEOID,Median_Income_Household, 
+                  Total_pop,White, Black, Asian, Hispanic, Other,
+                  Households,Size_per_House,Avg_Household_Size,
+                  year,
+                  Household_Income_All,
+                  All_household_income_low,All_household_income_high,
+                  White_household_income_high, Black_household_income_low,
+                  Hispanic_household_income_low, Asian_household_income_low)
+  
+  
+  median_income_yearly <- rbind(median_income_yearly,acs_data_2020)
+  
+  ## Linear Interpolation for median income data
+  median_income_yearly <- median_income_yearly %>%
+    group_by(GEOID) %>%
+    arrange(year) %>%
+    mutate(Imputed = 
+             ifelse(rep(all(is.na(Median_Income_Household)),length(year)), NA,
+                    na.approx(Median_Income_Household, year,rule = 2))) %>%
+    ungroup() %>%
+    mutate(Scaled_Income = as.numeric(scale(Imputed)))
+  
+  census_data <- Energy_community %>% 
+    dplyr::select(ZCTA5CE10,com_name,county_name,com_type,geometry) %>% 
+    unique()
+  
+  HICDD_monthly <- calculateHICDD(2016:2020, 
+                          census_data =  census_data,
+                          observations=dim(census_data)[1])
+  
+  HICDD_monthly <- HICDD_monthly %>%
+    rename(GEOID = ZCTA5CE10,
+           HICDD = mean) %>%
+    dplyr::select(GEOID, year, month, HICDD) %>%
+    mutate(HICDD_scaled = as.numeric(scale(HICDD)))
+  
+  monthly_data <- monthly_data %>%
+    left_join(HICDD_monthly, by = c("GEOID","year","month")) %>%
+    left_join(median_income_yearly, by = c("GEOID", "year")) %>%
+    mutate(White_prop = White/Total_pop,
+           Black_prop = Black/Total_pop,
+           Asian_prop = Asian/Total_pop,
+           Hispanic_prop = Hispanic/Total_pop) 
+  monthly_data <- monthly_data %>%
+    mutate(groups = paste0(year,"_",month)) %>%
+    mutate(Total_pop_scaled = as.numeric(scale(Total_pop))) %>%
+    mutate(Households_scaled = as.numeric(scale(Households)))
+  
+  data_table <- monthly_data %>% 
+    filter(!is.na(True_Energy),!is.na(Avg_Household_Size),!is.na(Scaled_Income),!is.na(Households_scaled)) %>%
+    unique()
+  
+  data_table_cat <- data_table %>%
+    mutate(Median_Income_cat = ifelse(Imputed <= 50000,
+                                      "<=50k",
+                                      ifelse(Imputed <=70000,
+                                             "50k-70k",
+                                             ifelse(Imputed <= 90000,
+                                                    "70k-90k",
+                                                    ifelse(Imputed > 90000,
+                                                           ">90k", NA))))) %>%
+    mutate(Median_Income_cat = factor(Median_Income_cat,
+                                      levels = c("<=50k","50k-70k","70k-90k",">90k")))
+  
+  data_table_2 <- data_table_cat %>%
+    mutate(ICE_income = (All_household_income_high - All_household_income_low)/Households) %>%
+    mutate(ICE_income_Black = (White_household_income_high - Black_household_income_low)/Households) %>%
+    mutate(ICE_income_Hispanic = (White_household_income_high - Hispanic_household_income_low)/Households) %>%
+    mutate(ICE_income_Asian = (White_household_income_high - Asian_household_income_low)/Households)
+  
+  zcta_county_match <- readRDS(file.path(data_path, "zcta_county_climate_match.rds"))
+  
+  data_table_final <- data_table_2 %>%
+  rename(total_accounts = number_of_accounts) %>%
+  mutate(total_accounts = as.numeric(total_accounts)) %>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    True_Energy/Households,
+                                    True_Energy/total_accounts
+  )) %>%
+  filter(!is.na(Normalized_Energy))
+  
+  return(data_table_final)
+}

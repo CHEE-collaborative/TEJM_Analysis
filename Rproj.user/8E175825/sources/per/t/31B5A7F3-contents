@@ -1,0 +1,400 @@
+#Draw estimates
+library(lqmm)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+options(scipen = 999)
+## plot for ZCTA income categories
+Model1 <- readRDS("./Income/model_summary_HICDD_categorical_income_0.5.rds")
+
+slope_income <- data.frame(category = factor(c("50,000-69,999", "70,000-89,999", ">= 90,000"),
+                                             levels = c("50,000-69,999", "70,000-89,999", ">= 90,000")),
+                           point_estimate = c(Model1$tTable[8:10,1]),
+                           lower = c(Model1$tTable[8:10,3]),
+                           upper = c(Model1$tTable[8:10,4]))
+
+ggplot(slope_income, aes(x = category, y = point_estimate)) +
+  geom_point(size = 5, aes(color = category)) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper, color = category), width = 0.1, linewidth = 1.5) + 
+  labs(#title = "Estimated Slopes for HICDD:ICE interactions",
+    y = "HICDD:ICE",
+    x = expression(bold(paste("Income Groups (", tau, " = 0.5)")))) +
+  scale_color_manual(name = "Income Groups",
+                     values = c("50,000-69,999" = "#FF6F61", 
+                                "70,000-89,999" = "#DAA520", 
+                                ">= 90,000" = "#40E0D0"),
+                     labels = c("50,000-69,999", "70,000-89,999", ">= 90,000")) +
+  theme_bw()+
+  theme(axis.ticks = element_blank(),
+        # panel.grid.major.x = element_blank(),
+        # panel.grid.minor = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))+
+  ylim(-0.5, 2.5)
+  
+
+## Grouped with quantiles
+Model1 <- readRDS("./Income/model_summary_HICDD_categorical_income_0.1.rds")
+Model2 <- readRDS("./Income/model_summary_HICDD_categorical_income_0.5.rds")
+Model3 <- readRDS("./Income/model_summary_HICDD_categorical_income_0.9.rds")
+# Model3$tTable
+# round(Model3$tTable,2)
+slope_income <- data.frame(category = rep(factor(c("50,000-69,999", "70,000-89,999", ">= 90,000"),
+                                                 levels = c("50,000-69,999", "70,000-89,999", ">= 90,000")),3),
+                           point_estimate = c(Model1$tTable[8:10,1], 
+                                              Model2$tTable[8:10,1],
+                                              Model3$tTable[8:10,1]),
+                           lower = c(Model1$tTable[8:10,3],
+                                     Model2$tTable[8:10,3],
+                                     Model3$tTable[8:10,3]),
+                           upper = c(Model1$tTable[8:10,4],
+                                     Model2$tTable[8:10,4],
+                                     Model3$tTable[8:10,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+
+ggplot(data = slope_income, 
+       aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Income Group",
+                     labels = c("$50,000-$69,999", "$70,000-$89,999", ">= $90,000"),
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption (Mwh)", y = "Quantile") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+## Grouped with quantiles, More Income Groups
+Model1 <- readRDS("./Income/model_summary_HICDD_categorical_income_more_0.1.rds")
+Model2 <- readRDS("./Income/model_summary_HICDD_categorical_income_more_0.5.rds")
+Model3 <- readRDS("./Income/model_summary_HICDD_categorical_income_more_0.9.rds")
+
+slope_income <- data.frame(category = rep(factor(c("50,000-59,999","60,000-69,999", 
+                                                   "70,000-79,999","80,000-89,999", 
+                                                   "90,000-99,999",">= 100,000"),
+                                                 levels = c("50,000-59,999","60,000-69,999", 
+                                                            "70,000-79,999","80,000-89,999", 
+                                                            "90,000-99,999",">= 100,000")),3),
+                           point_estimate = c(Model1$tTable[11:16,1], 
+                                              Model2$tTable[11:16,1],
+                                              Model3$tTable[11:16,1]),
+                           lower = c(Model1$tTable[11:16,3],
+                                     Model2$tTable[11:16,3],
+                                     Model3$tTable[11:16,3]),
+                           upper = c(Model1$tTable[11:16,4],
+                                     Model2$tTable[11:16,4],
+                                     Model3$tTable[11:16,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 6)))
+
+ggplot(data = slope_income, 
+       aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Income Level",
+                     labels = c("50,000-59,999","60,000-69,999", 
+                                "70,000-79,999","80,000-89,999", 
+                                "90,000-99,999",">= 100,000"),
+                     values = c("#FF6F61","#3F51B5","#FFC107",
+                                "#4CAF50","#9C27B0","#00BCD4"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "HICDD:Income", y = "Quantiles") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold")) + 
+  ylab(expression(tau))
+
+## Box plot for ZCTA energy use distribution
+data_energy <- readRDS("data_table_cat.rds") %>%
+  group_by(GEOID,Median_Income_cat) %>%
+  summarize(Total_Energy = sum(Total_Energy), Households = sum(Households)) %>%
+  mutate(normalized_energy_use = Total_Energy/Households)
+
+
+ggplot(data = data_energy, aes(x = Median_Income_cat, y = normalized_energy_use)) +
+  geom_boxplot() +
+  labs(x = "Income Groups", y = "Energy Use per Household") +
+  scale_y_continuous(limits = c(0, 2))+
+  scale_fill_brewer(palette = "Pastel1", name = "Income Categories") + 
+  theme_bw() + 
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16), 
+    legend.position = "top", 
+    panel.grid.major = element_line(color = "grey80"), 
+    panel.grid.minor = element_blank(), 
+    panel.background = element_blank(), 
+    strip.background = element_blank(), 
+    axis.text.x = element_text(size = 12, face = "bold"), 
+    axis.text.y = element_text(size = 12, face = "bold"),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.title = element_text(face = "bold") 
+  )
+
+
+
+## plot for ICE estimates with income and race
+Model1 <- readRDS("./Race/model_summary_HICDD_ICE_income_Black_0.5.rds")
+Model2 <- readRDS("./Race/model_summary_HICDD_ICE_income_Hispanic_0.5.rds")
+Model3 <- readRDS("./Race/model_summary_HICDD_ICE_income_Asian_0.5.rds")
+Model3$tTable
+round(Model3$tTable,2)
+slope_income <- data.frame(category = c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),
+                           point_estimate = c(Model1$tTable[6,1],Model2$tTable[6,1],
+                                              Model3$tTable[6,1]),
+                           lower = c(Model1$tTable[6,3],Model2$tTable[6,3],
+                                     Model3$tTable[6,3]),
+                           upper = c(Model1$tTable[6,4],Model2$tTable[6,4],
+                                     Model3$tTable[6,4]))
+
+ggplot(slope_income, aes(x = category, y = point_estimate)) +
+  geom_point(size = 5, aes(color = category)) + 
+  geom_errorbar(aes(ymin = lower, ymax = upper, color = category), width = 0.1, linewidth = 1.5) + 
+  labs(#title = "Estimated Slopes for HICDD:ICE interactions",
+       y = "HICDD:ICE",
+       x = expression(bold(paste("Race/Ethnicity (", tau, " = 0.5)")))) +
+  scale_x_discrete(labels = c("ICE_Income_Black" = "White vs Black", 
+                              "ICE_Income_Hispanic" = "White vs Hispanic", 
+                              "ICE_Income_Asian" = "White vs Asian")) +
+  scale_color_manual(name = "Race/Ethnicity",
+                     values = c("ICE_Income_Black" = "#FF6F61", 
+                                "ICE_Income_Hispanic" = "#DAA520", 
+                                "ICE_Income_Asian" = "#40E0D0"),
+                     labels = c("White vs Black", "White vs Hispanic", "White vs Asian")) +
+  theme_bw()+
+  theme(axis.ticks = element_blank(),
+        # panel.grid.major.x = element_blank(),
+        # panel.grid.minor = element_blank(),
+        legend.position = "right",
+        axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+## Multiple Groups
+Model1 <- readRDS("./Race/model_summary_HICDD_ICE_income_Black_0.1.rds")
+Model2 <- readRDS("./Race/model_summary_HICDD_ICE_income_Hispanic_0.1.rds")
+Model3 <- readRDS("./Race/model_summary_HICDD_ICE_income_Asian_0.1.rds")
+Model4 <- readRDS("./Race/model_summary_HICDD_ICE_income_Black_0.5.rds")
+Model5 <- readRDS("./Race/model_summary_HICDD_ICE_income_Hispanic_0.5.rds")
+Model6 <- readRDS("./Race/model_summary_HICDD_ICE_income_Asian_0.5.rds")
+Model7 <- readRDS("./Race/model_summary_HICDD_ICE_income_Black_0.9.rds")
+Model8 <- readRDS("./Race/model_summary_HICDD_ICE_income_Hispanic_0.9.rds")
+Model9 <- readRDS("./Race/model_summary_HICDD_ICE_income_Asian_0.9.rds")
+
+slope_income <- data.frame(category = rep(c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),3),
+                           point_estimate = c(Model1$tTable[6,1],Model2$tTable[6,1],Model3$tTable[6,1],
+                                              Model4$tTable[6,1],Model5$tTable[6,1],Model6$tTable[6,1],
+                                              Model7$tTable[6,1],Model8$tTable[6,1],Model9$tTable[6,1]),
+                           lower = c(Model1$tTable[6,3],Model2$tTable[6,3],Model3$tTable[6,3],
+                                     Model4$tTable[6,3],Model5$tTable[6,3],Model6$tTable[6,3],
+                                     Model7$tTable[6,3],Model8$tTable[6,3],Model9$tTable[6,3]),
+                           upper = c(Model1$tTable[6,4],Model2$tTable[6,4],Model3$tTable[6,4],
+                                     Model4$tTable[6,4],Model5$tTable[6,4],Model6$tTable[6,4],
+                                     Model7$tTable[6,4],Model8$tTable[6,4],Model9$tTable[6,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+
+ggplot(data = slope_income, 
+       aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Race/Ethnicity",
+                     labels = c("ICE_Income_Black", "ICE_Income_Hispanic", "ICE_Income_Asian"),
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption (Mwh)", y = "Quantile") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+data_ICE <- readRDS("data_table_2.rds") %>%
+  group_by(GEOID) %>%
+  summarise(ICE_income_Black = mean(ICE_income_Black, na.rm=T),
+            ICE_income_Hispanic = mean(ICE_income_Hispanic, na.rm=T),
+            ICE_income_Asian = mean(ICE_income_Asian, na.rm=T)) %>%
+  pivot_longer(
+    cols = starts_with("ICE_income_"), # Selecting columns that start with 'ICE_income_'
+    names_to = "Race", 
+    values_to = "Mean ICE"
+  ) %>%
+  mutate(Race = str_remove(Race, "ICE_income_"))
+
+ggplot(data = data_ICE, aes(x = Race, y = `Mean ICE`)) +
+  geom_boxplot() +
+  labs(x = "Income Groups", y = "Energy Use per Household") +
+  # scale_y_continuous(limits = c(0, 2))+
+  scale_fill_brewer(palette = "Pastel1", name = "Income Categories") + 
+  theme_bw() + 
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16), 
+    legend.position = "top", 
+    panel.grid.major = element_line(color = "grey80"), 
+    panel.grid.minor = element_blank(), 
+    panel.background = element_blank(), 
+    strip.background = element_blank(), 
+    axis.text.x = element_text(size = 12, face = "bold"), 
+    axis.text.y = element_text(size = 12, face = "bold"),
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold"),
+    legend.title = element_text(face = "bold") 
+  )
+## Heat map for different quantiles and different income groups
+point_estimate <- lower <- upper <- NULL
+for(i in 1:9){
+  tau = i/10
+  file_name <- paste0("./Income/model_summary_HICDD_categorical_income_",tau,".rds")
+  model <- readRDS(file_name)
+  point_estimate <- c(point_estimate, model$tTable[8:10,1])
+  lower <- c(lower, model$tTable[8:10,3])
+  upper <- c(upper, model$tTable[8:10,4])
+}
+
+quantiles <- c(rep(as.character(1:9/10), each = 3))
+category <- rep(factor(c("50,000-69,999", "70,000-89,999", ">= 90,000"),
+                      levels = c("50,000-69,999", "70,000-89,999", ">= 90,000")),9)
+slope_income <- data.frame(category = category,
+                           quantiles = quantiles,
+                           point_estimate = point_estimate,
+                           lower = lower,
+                           upper = upper)
+
+## More Income Groups
+point_estimate <- lower <- upper <- NULL
+for(i in 1:9){
+  tau = i/10
+  file_name <- paste0("./Income/model_summary_HICDD_categorical_income_more_",tau,".rds")
+  model <- readRDS(file_name)
+  point_estimate <- c(point_estimate, model$tTable[11:16,1])
+  lower <- c(lower, model$tTable[11:16,3])
+  upper <- c(upper, model$tTable[11:16,4])
+}
+
+quantiles <- c(rep(as.character(1:9/10), each = 6))
+category <- rep(factor(c("$50,000-$59,999","$60,000-$69,999", 
+                         "$70,000-$79,999","$80,000-$89,999", 
+                         "$90,000-$99,999",">= $100,000"),
+                       levels = c("$50,000-$59,999","$60,000-$69,999", 
+                                  "$70,000-$79,999","$80,000-$89,999", 
+                                  "$90,000-$99,999",">= $100,000")),9)
+slope_income <- data.frame(category = category,
+                           quantiles = quantiles,
+                           point_estimate = point_estimate,
+                           lower = lower,
+                           upper = upper)
+
+ggplot(slope_income, aes(x = category, y = quantiles, fill = point_estimate)) +
+  geom_tile(color = "white") +  # white borders for the tiles
+  scale_fill_viridis_c(name = "Point Estimate") +
+  theme_minimal() +
+  labs(#title = "Estimated Slopes for HICDD:ICE interactions",
+    y = "Quantiles",
+    x = "Income Groups") +
+  theme(axis.text = element_text(size = 12, face = "bold"),
+        axis.text.x = element_text(size = 8, face = "bold"),
+        axis.title = element_text(size = 14, face = "bold"),
+        legend.position = "right")
+
+## Group Average 
+data_energy <- readRDS("data_table_cat.rds") %>%
+  group_by(Median_Income_cat,year, month) %>%
+  summarize(Total_Energy = sum(Total_Energy), Households = sum(Households)) %>%
+  mutate(normalized_energy_use = Total_Energy/Households) %>%
+  mutate(times = paste0(month, ".",year)) %>%
+  mutate(times = factor(times)) %>%
+  mutate(times2 = ifelse(month == 5, "May", 
+                         ifelse(month == 6, "Jun", 
+                                ifelse(month == 7, "Jul", 
+                                       ifelse(month == 8, "Aug", 
+                                              ifelse(month == 9, "Sep", NA)))))) %>%
+  mutate(times2 = factor(times2, levels = c("May", "Jun", "Jul", "Aug", "Sep")))
+
+levels(data_energy$Median_Income_cat) <- c("< $50,000","$50,000-$69,999", "$70,000-$89,999", ">= $90,000")
+
+p1 <- ggplot(data_energy, aes(x = times2, y = normalized_energy_use, 
+                              color = Median_Income_cat, 
+                              group = Median_Income_cat,
+                              shape = Median_Income_cat)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(#title = "Average Energy Use per",
+    x = "Month",
+    y = "Average energy use per household (Mwh)",
+    color = "Income Groups",
+    shape = "Income Groups") +
+  scale_shape_manual(values = c(16, 17, 18,15)) +
+  scale_x_discrete(breaks = function(x) x[seq_along(x) %% 2 == 1]) +
+  facet_wrap(~ year, scales = "free_x") +
+  theme_bw() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(size = 12, face = "bold",hjust = 1),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+p1
+# legend_plot <- cowplot::get_legend(p1)
+# p2 <- cowplot::plot_grid(p1 + theme(legend.position = "none"), 
+#                          legend_plot, 
+#                          ncol = 2, 
+#                          rel_widths = c(5, 1))
+# p2
+## Distribution of HICDD and slopes
+set.seed(123)
+n <- 100
+data <- data.frame(
+  HICDD = runif(n, 0, 1),   # Random HICDD values between 0 and 1
+  Y = rnorm(n, 50, 10),
+  IncomeGroup = factor(sample(c("50,000-69,999", "70,000-89,999", ">= 90,000"), size = n, replace = TRUE))
+)
+
+# Create the combined plot
+p <- ggplot(data, aes(x = HICDD)) +
+  # Add histogram at the top
+  geom_histogram(data = data, binwidth = 0.1, fill = "grey70", color = "black") +
+  # Add line plot at the bottom
+  geom_line(aes(y = Y, group = IncomeGroup, color = IncomeGroup), position = position_dodge(0.1), size = 1) +
+  facet_grid(vars(IncomeGroup), scales = "free_y", space = "free_y", switch = "y") +
+  labs(
+    # title = "Line Plot Grouped by Income with HICDD Distribution",
+    x = "HICDD",
+    y = "Estimated HICDD:Income"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.background = element_blank(),
+    strip.placement = "outside"
+  )
+
+p
+
+## Table 2
+Model1 <- readRDS("./Race/model_summary_HICDD_ICE_income_Black_0.5.rds")
+Model2 <- readRDS("./Race/model_summary_HICDD_ICE_income_Hispanic_0.5.rds")
+Model3 <- readRDS("./Race/model_summary_HICDD_ICE_income_Asian_0.5.rds")
+
+Model3
+
+
+
+
+

@@ -1,0 +1,434 @@
+---
+title: "Energy Data Download and Cleaning"
+output: html_document
+date: "2023-06-15"
+---
+
+```{r}
+################################################################################
+#################################### NOTE ######################################
+################################################################################
+
+# zip code to ZCTA crosswalk needs to be downloaded locally and was retrieved from this website
+# https://udsmapper.org/zip-code-to-zcta-crosswalk/
+
+# API URL retrieved from this website
+# https://data.ny.gov/Energy-Environment/Utility-Energy-Registry-Monthly-ZIP-Code-Energy-Us/tzb9-c2c6
+
+################################################################################
+################################################################################
+```
+
+```{r}
+# notes to talk to Daniel about
+
+# - the centroid representing electricity usage is at the address of reported usage
+# - for this reason I don't think uploading the crosswalk is necessary
+# 
+
+```
+
+```{r}
+################################################################################
+################################ load library ##################################
+################################################################################
+
+library(tigris)
+library(ggplot2)
+library(dplyr)
+library(sf)
+library(readxl)
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################## Constants ###################################
+################################################################################
+
+DATA_DATADIR <- "data"
+
+ENERGY_DATADIR = "energy_data"
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################ Maintenance ###################################
+################################################################################
+
+# create data folder if it doesn't already exist
+if(!dir.exists(here(DATA_DATADIR))){dir.create(here(DATA_DATADIR))}
+
+# create energy folder in data folder if it doesn't already exist 
+if(!dir.exists(here("data", ENERGY_DATADIR))){dir.create(here("data", ENERGY_DATADIR))}
+
+################################################################################
+################################################################################
+```
+
+```{r}
+# don't run
+# show Daniel that "zcta" isnt working for decennial. is it okay if we use tigris instead?
+
+census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+
+GetCensusData <- function(geography) {
+  census_data <- get_decennial(
+    geography = geography,
+    variables = c("Total_pop" = "P001001"),
+    year = 2010,
+    output = "wide",
+    geometry = TRUE,
+    state = 36
+  ) %>%
+    st_transform(crs = st_crs(4326)) %>%
+    filter(!st_is_empty(.))
+  
+  return(census_data)
+}
+
+GEOGRAPHIC_RESOLUTION = "zcta"
+
+census_data = GetCensusData(GEOGRAPHIC_RESOLUTION)
+
+installed.packages()
+
+
+```
+
+
+```{r}
+################################################################################
+################################ Zip Code Energy ###############################
+################################################################################
+
+# API to retrieve energy data. note the "?$limit=1000000" at the end of the URL.
+# Without this, the API will only retrieve the first 1000 records. 
+url = "https://data.ny.gov/resource/tzb9-c2c6.geojson?$limit=1000000"
+
+# reading in the energy data
+shape = st_read(url)
+
+# filtering the shapefile to contain only electricity data in the warm season months
+filtered_shape <- subset(shape, data_field_display_name == "Residential Consumption (R)" & data_class == "electricity" & month %in% c(5, 6, 7, 8, 9) & value > 0)
+
+# reading in zip code to ZCTA crosswalk
+zip_crosswalk = read_excel(here("anna", "data", "Uploaded Files", "ZIPCodetoZCTACrosswalk2020UDS.xlsx"))
+
+# Join the dataframes based on zip code
+energy_per_zcta <- filtered_shape %>%
+  left_join(zip_crosswalk, by = c("zip_code" = "ZIP_CODE")) %>%
+  dplyr::select(ZCTA, value, number_of_accounts, month, year) 
+
+# Calculate the sum of energy usage and number of accounts per ZCTA per month per year
+energy_per_zcta_summary <- energy_per_zcta %>%
+  group_by(ZCTA, month, year) %>%
+  summarise(total_energy = sum(as.numeric(value)),
+            total_accounts = sum(as.numeric(number_of_accounts)))
+
+# normalize energy usage by number of accounts
+energy_per_zcta_summary <- energy_per_zcta_summary %>%
+  mutate(normalized_energy_usage = total_energy / total_accounts)
+
+# view data
+head(energy_per_zcta_summary)
+
+```
+
+```{r}
+################################################################################
+##### Plotting the data with a uniform color scale to visualize and compare ####
+################################################################################
+
+# getting zctas from tigris for outlines on plot
+zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+
+# setting the crs of the zctas
+zctas <- st_transform(zctas, crs = st_crs(energy_per_zcta_summary))
+
+# joining the zctas with the energy data
+joined <- st_join(zctas, energy_per_zcta_summary)
+
+# finding the years for which the energy data is available
+years <- unique(joined$year)
+
+# setting min and max values for color scale
+max_value <- max(joined$normalized_energy_usage, na.rm = TRUE)
+min_value <- min(joined$normalized_energy_usage, na.rm = TRUE)
+
+# setting coordinates for ggplot
+NY_BBOX <- c(46, -80, 40, -71)
+xlim <- c(NY_BBOX[2], NY_BBOX[4])
+ylim <- c(NY_BBOX[1], NY_BBOX[3])
+
+for (year in years) {
+
+  filtered_data <- joined[joined$year == year, ]
+  
+  for (month in c(5, 6, 7, 8, 9)) {
+
+    filtered_data_month <- filtered_data[filtered_data$month == month, ]
+    
+   if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+        plot_title <- paste("No data for", month, "/", year)
+        plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+        next  
+     }
+
+    plot_title <- paste("Zipcode-Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+    
+    plot <- ggplot(filtered_data_month) +
+      geom_sf(aes(fill = normalized_energy_usage)) +
+      scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+                          breaks = seq(min_value, max_value, length.out = 5),
+                          limits = c(min_value, max_value)) +
+      labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+      theme_minimal() +
+      theme(legend.position = "right") +
+      coord_sf(xlim = xlim, ylim = ylim, lims_method = "geometry_bbox")
+      
+    print(plot)
+  
+  }
+}
+
+```
+
+```{r}
+################################################################################
+########################### Community Energy ###################################
+################################################################################
+
+# downloading community energy data 
+c_url = "https://data.ny.gov/resource/m3xm-q3dw.geojson?$limit=2000000"
+
+c_shape = st_read(c_url)
+
+c_filtered_shape <- subset(c_shape, data_field_display_name == "Residential Consumption (R)" & data_class == "electricity" & month %in% c(5, 6, 7, 8, 9) & value > 0)
+
+c_zctas <- st_transform(zctas, crs = st_crs(c_filtered_shape))
+
+c_joined <- st_join(c_zctas, c_filtered_shape)
+
+c_joined <- c_joined %>%
+  mutate(normalized_energy_usage = as.numeric(value) / as.numeric(number_of_accounts))
+
+c_joined
+
+# finding the years for which the energy data is available
+years <- unique(c_joined$year)
+
+# setting min and max values for color scale
+max_value <- max(c_joined$normalized_energy_usage, na.rm = TRUE)
+min_value <- min(c_joined$normalized_energy_usage, na.rm = TRUE)
+
+# setting coordinates for ggplot
+NY_BBOX <- c(46, -80, 40, -71)
+xlim <- c(NY_BBOX[2], NY_BBOX[4])
+ylim <- c(NY_BBOX[1], NY_BBOX[3])
+
+for (year in years) {
+
+  filtered_data <- c_joined[c_joined$year == year, ]
+  
+  for (month in c(5, 6, 7, 8, 9)) {
+
+    filtered_data_month <- filtered_data[filtered_data$month == month, ]
+    
+   if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+        plot_title <- paste("No data for", month, "/", year)
+        plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+        next  
+     }
+
+    plot_title <- paste("Community-Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+    
+    plot <- ggplot(filtered_data_month) +
+      geom_sf(aes(fill = normalized_energy_usage)) +
+      scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+                          breaks = seq(min_value, max_value, length.out = 5),
+                          limits = c(min_value, max_value)) +
+      labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+      theme_minimal() +
+      theme(legend.position = "right") +
+      coord_sf(xlim = xlim, ylim = ylim, lims_method = "geometry_bbox")
+      
+    print(plot)
+  
+  }
+}
+
+################################################################################
+################################################################################
+
+```
+
+```{r}
+# merging the community level data and the zip code level data and plotting
+
+# Find common column names
+common_cols <- intersect(colnames(filtered_shape), colnames(c_filtered_shape))
+
+# subset the objects to include only the common columns
+filtered_shape <- filtered_shape[, common_cols]
+c_filtered_shape <- c_filtered_shape[, common_cols]
+
+# combine the zip code and community level energy data
+combined_shape <- rbind(filtered_shape, c_filtered_shape)
+
+# join the energy data with zcta spatial boundaries
+combined_shape <- st_join(c_zctas, combined_shape)
+
+# create a column of normalized energy values by number of accounts
+combined_shape <- combined_shape %>%
+  mutate(normalized_energy_usage = as.numeric(value) / as.numeric(number_of_accounts))
+
+# calculate the log-transformed values for the legend
+combined_shape$log_normalized_energy_usage <- log(combined_shape$normalized_energy_usage)
+
+# get the min and max values of the log-transformed data
+min_value <- 0
+max_value <- max(combined_shape$log_normalized_energy_usage, na.rm = TRUE)
+
+# setting coordinates for ggplot
+NY_BBOX <- c(46, -80, 40, -71)
+xlim <- c(NY_BBOX[2], NY_BBOX[4])
+ylim <- c(NY_BBOX[1], NY_BBOX[3])
+
+# loop that plots warm season months for each year to visualize the data
+for (year in years) {
+  filtered_data <- combined_shape[combined_shape$year == year, ]
+  
+  for (month in c(5, 6, 7, 8, 9)) {
+    filtered_data_month <- filtered_data[filtered_data$month == month, ]
+    
+    if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+      plot_title <- paste("No data for", month, "/", year)
+      plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+      next
+    }
+    
+    plot_title <- paste("Combined Community and Zip Code Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+    
+    plot <- ggplot(filtered_data_month) +
+      geom_sf(aes(fill = normalized_energy_usage)) +
+      scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+                          breaks = seq(min_value, max_value, length.out = 5),
+                          limits = c(min_value, max_value)) +
+      labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+      theme_minimal() +
+      theme(legend.position = "right")
+      
+    print(plot)
+  }
+}
+
+
+```
+
+```{r}
+# filling in energy usage data 
+
+
+
+
+
+
+```
+
+
+
+
+```{r}
+
+############################# SCRATCH
+
+
+ plot_title <- paste("Energy Usage in", month, "/", year)
+    plot(filtered_data_month[17], col = heat.colors(100),
+         breaks = seq(min_value, max_value, length.out = 100),
+         main = plot_title)
+    legend("topright", legend = c(min_value, max_value), fill = heat.colors(2), title = "Normalized Energy Usage (MWh)")
+
+
+
+
+#########################
+
+dim(filtered_shape)
+
+# taking a look at the available energy data (keep in mind this has all years plotted)
+plot(filtered_shape[12])
+
+# getting zctas from tigris
+zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+
+# setting the crs of the zctas
+zctas <- st_transform(zctas, crs = st_crs(filtered_shape))
+
+# joining the zctas with the energy data
+joined <- st_join(zctas, filtered_shape)
+
+# finding the years for which the energy data is available
+years <- unique(joined$year)
+
+# plotting the energy per zcta for each year
+for (year in years) {
+  filtered_data <- joined[joined$year == year, ]
+  
+  for (month in c(5, 6, 7, 8, 9)) {
+    filtered_data_month <- filtered_data[filtered_data$month == month, ]
+    
+   if (all(is.na(filtered_data_month$value))) {
+        plot_title <- paste("No data for", month, "/", year)
+        plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+        next  # Skip to the next iteration if all data is NA for the month
+      }
+    
+    names(filtered_data_month)
+    
+  
+    
+      aggregated <- aggregate(cbind(as.numeric(filtered_data_month$value), as.numeric(filtered_data_month$number_of_accounts)), 
+                        by = list(filtered_data_month$ZCTA5CE10), 
+                        FUN = sum)
+      
+      
+      colnames(aggregated) <- c("ZCTA5CE10", "total_energy_usage", "number_of_accounts")
+    
+      
+    merged <- merge(zctas, aggregated, by = "ZCTA5CE10", all.x = TRUE)
+    names(merged)
+    
+    merged$norm_energy_usage = merged$total_energy_usage / merged$number_of_accounts
+    
+    plot_title <- paste("Energy Usage in", month, "/", year)
+    plot(merged[15], main = plot_title)
+    names(merged)
+    
+  }
+}
+
+aggregated <- filtered_shape %>%
+  group_by(month, zip_code, year) %>%
+  mutate(value = as.numeric(value), 
+         number_of_accounts = as.numeric(number_of_accounts),
+         norm_value = value/as.numeric(number_of_accounts))
+class(filtered_shape$number_of_accounts)
+names(filtered_shape)
+View(shape)
+
+
+head(shape)
+
+
+#look into using ZCTA to zip code
+################################################################################
+################################################################################
+```
+

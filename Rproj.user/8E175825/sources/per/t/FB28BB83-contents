@@ -1,0 +1,169 @@
+library(raster)
+library(geodata)
+
+GetCensusData_buildings <- function(geography) {
+  census_data <- get_decennial(
+    geography = geography,
+    variables = c("Total_pop" = "P001001",
+                  "Total_status_units" = "H003001",
+                  "Vacant" = "H003003",
+                  "Occupied" = "H003002",
+                  "Total_units" = "H001001"),
+    year = 2010,
+    output = "wide",
+    geometry = TRUE,
+    state = 36
+  ) %>%
+    st_transform(crs = st_crs(4326)) %>%
+    filter(!st_is_empty(.))
+  
+  return(census_data)
+}
+
+#Create linear interpolated files for GPW population
+GPW_process <- function(){
+  
+  gpw_2000 <- raster(file.path(data_path, "building", "gpw_v4_population_density_rev11_2000_30_sec.tif"))
+  gpw_2005 <- raster(file.path(data_path, "building", "gpw_v4_population_density_rev11_2005_30_sec.tif"))
+  gpw_2010 <- raster(file.path(data_path, "building", "gpw_v4_population_density_rev11_2010_30_sec.tif"))
+  gpw_2015 <- raster(file.path(data_path, "building", "gpw_v4_population_density_rev11_2015_30_sec.tif"))
+  gpw_2020 <- raster(file.path(data_path, "building", "gpw_v4_population_density_rev11_2020_30_sec.tif"))
+  
+  
+  # using gadm function to get NY state coordinates
+  usa = geodata::gadm("USA", level=1, path = ".")
+  aoi <- usa[usa$NAME_1 == "New York", ]
+  
+  # finding the extent of new york state 
+  aoi <- st_as_sf(aoi)
+  ny_extent <- st_as_sfc(aoi) %>% st_geometry() %>% st_bbox()
+  
+  # Crop the raster to the extent of New York State
+  ny_gpw_2000 <- crop(gpw_2000, ny_extent)
+  ny_gpw_2005 <- crop(gpw_2005, ny_extent)
+  ny_gpw_2010 <- crop(gpw_2010, ny_extent)
+  ny_gpw_2015 <- crop(gpw_2015, ny_extent)
+  ny_gpw_2020 <- crop(gpw_2020, ny_extent)
+  
+  # Define the list of available years
+  available_years <- c(2000, 2005, 2010, 2015, 2020)
+  
+  # Define the list to store interpolated rasters
+  interpolated_rasters <- list()
+  
+  # Iterate through the years
+  for (year in 2000:2020) {
+    if (year %in% available_years) {
+      # Use available raster as template
+      raster_name <- paste0("ny_gpw_", year)
+      raster_data <- get(raster_name)
+      interpolated_raster <- raster_data
+    } else {
+      # Use empty template raster
+      interpolated_raster <- raster(ny_gpw_2020)  
+      interpolated_raster[] <- NA
+    }
+    
+    interpolated_rasters[[as.character(year)]] <- interpolated_raster
+  }
+  
+  # Interpolate between the available years
+  for (i in 1:(length(available_years) - 1)) {
+    year1 <- available_years[i]
+    year2 <- available_years[i + 1]
+    raster1 <- interpolated_rasters[[as.character(year1)]]
+    raster2 <- interpolated_rasters[[as.character(year2)]]
+    
+    # Calculate the difference between neighboring rasters
+    raster_diff <- raster2 - raster1
+    
+    # Fill in the missing rasters
+    for (year in (year1 + 1):(year2 - 1)) {
+      ratio <- (year - year1) / (year2 - year1)
+      interpolated_raster <- raster1 + (raster_diff * ratio)
+      interpolated_rasters[[as.character(year)]] <- interpolated_raster
+      
+      # Save the raster to a file
+      raster_file <- file.path(data_path, "building", paste0("ny_gpw_", year, ".tif"))
+      writeRaster(interpolated_raster, filename = raster_file, format = "GTiff", overwrite = TRUE)
+      
+    }
+  }
+}
+
+#Filter buildings through GPW
+Building_filter <- function(){
+  sf_use_s2(FALSE)
+  #Read building data
+  BUILDINGS <- st_read(file.path(data_path, "building", "NewYork.geojson")) 
+  BUILDINGS_CENTROID <- st_centroid(BUILDINGS)
+  
+  ##### Removing Buildings in Areas with <1 Person per Km^2 According to GPW #####
+  #Read gpw data
+  # converting ny_gpw_2020 to a SpatialPolygonsDataFrame
+  # using gadm function to get NY state coordinates
+  usa = geodata::gadm("USA", level=1, path = ".")
+  aoi <- usa[usa$NAME_1 == "New York", ]
+  
+  # finding the extent of new york state 
+  aoi <- st_as_sf(aoi)
+  ny_extent <- st_as_sfc(aoi) %>% st_geometry() %>% st_bbox()
+  
+  gpw_2020 <- raster(file.path(data_path, "building", "gpw_v4_population_density_rev11_2020_30_sec.tif"))
+  ny_gpw_2020 <- crop(gpw_2020, ny_extent)
+  
+  gpw_as_spatpoly <- as(ny_gpw_2020, 'SpatialPolygonsDataFrame')
+  # converting gpw_as_spatpoly to an sf object
+  gpw_as_sf <- st_as_sf(gpw_as_spatpoly)
+  # removing NA values from gpw_as_sf
+  gpw_as_sf <- na.omit(gpw_as_sf)
+  # Transform EPSG:9122 to EPSG:4326
+  gpw_as_sf <- st_transform(gpw_as_sf, crs = "EPSG:4326")
+  
+  # performing intersection between population and buildings
+  gpw_buildings_intersect <- st_intersection(gpw_as_sf, BUILDINGS_CENTROID)
+  
+  # removing buildings located within sq km with <1 person population
+  gpw_filtered_buildings <- gpw_buildings_intersect[gpw_buildings_intersect$gpw_v4_population_density_rev11_2020_30_sec >= 1, ]
+  
+  # removing large files to free space
+  rm(BUILDINGS_CENTROID)
+  rm(gpw_as_spatpoly)
+  rm(gpw_as_sf)
+  rm(gpw_buildings_intersect)
+  
+  ### Removing Buildings in <1 Person per Census Block According to Decennial ####
+  # getting census data based on GEOGRAPHIC_RESOLUTION
+  census_data <- GetCensusData_buildings(block) %>% mutate(occupied_ratio = Occupied/Total_units)
+
+  # performing intersection between census_data and gpw_filtered_buildings
+  census_buildings_intersect <- st_intersection(census_data, gpw_filtered_buildings)
+  
+  # removing buildings in census blocks with less than 1 person population
+  census_filtered_buildings <- census_buildings_intersect[census_buildings_intersect$Total_pop >= 1, ] %>%
+    mutate(occupied_ratio = ifelse(is.nan(occupied_ratio), 1, occupied_ratio)) %>%
+    select(GEOID,NAME, Total_pop, occupied_ratio)
+
+  # renaming the variable to be more general
+  filtered_buildings <- census_filtered_buildings
+  
+  # removing unused large files to free up space
+  rm(gpw_filtered_buildings)
+  rm(census_data)
+  rm(census_buildings_intersect)
+  rm(census_filtered_buildings)
+  
+  
+  # Perform intersection between BUILDINGS spatial polygons and the filtered building centroids
+  intersections <- st_intersects(BUILDINGS, filtered_buildings)
+  
+  # Checking where data intersects
+  building_indices <- which(sapply(intersections, length) > 0)
+  
+  # Subsetting the building data to only where it intersects with population data
+  cleaned_buildings <- BUILDINGS[building_indices, ]
+  
+  output_file <- file.path(data_path, "building", "cleaned_buildings.geojson")
+  st_write(cleaned_buildings, output_file, driver = "GeoJSON")
+}
+

@@ -1,0 +1,100 @@
+library(lqmm)
+library(tidyverse)
+library(lme4)
+
+data_table_cat <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat.rds")%>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_cat <- data_table_cat %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_county = as.factor(groups_county)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    Total_Energy/Households,
+                                    Total_Energy/total_accounts
+  )) %>%
+  filter(!is.na(Normalized_Energy))
+
+lm.effect_HICDD <- lmer(Normalized_Energy ~ HICDD + 
+                          Median_Income_cat + Avg_Household_Size + 
+                          HICDD*Median_Income_cat + 
+                          (1 | groups_county), 
+                        data = data_table_cat)
+
+saveRDS(lm.effect_HICDD, "/home/xz578/TEJM/LQMM3/Sensitivity_lmer/Income_group.rds")
+sum_income <- summary(readRDS("/home/xz578/TEJM/LQMM3/Sensitivity_lmer/Income_group.rds"))
+sum_income <- summary(lm.effect_HICDD)
+sum_income$coefficients[7:9,1:2]*1000
+lower <- sum_income$coefficients[7:9,1]*1000 - 1.96*sum_income$coefficients[7:9,2]*1000
+upper <- sum_income$coefficients[7:9,1]*1000 + 1.96*sum_income$coefficients[7:9,2]*1000
+
+round(sum_income$coefficients[7:9,1]*1000,2)
+round(lower,2)
+round(upper,2)
+sum_income$coefficients[7:9,3]
+
+
+
+data_table_2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_2.rds")%>%
+  # rename(total_accounts = number_of_accounts) %>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_2 <- data_table_2 %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_county = as.factor(groups_county)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    Total_Energy/Households,
+                                    Total_Energy/total_accounts
+  )) %>%
+  filter(!is.na(Normalized_Energy))
+
+lm.effect_HICDD_1 <- lmer(Normalized_Energy ~ HICDD +
+                          Avg_Household_Size +
+                          ICE_income_Black +
+                          HICDD*ICE_income_Black +
+                          (1 | groups_county),
+                        data = data_table_2) 
+saveRDS(lm.effect_HICDD_1, "/home/xz578/TEJM/LQMM3/Sensitivity_lmer/ICE_black.rds")
+
+lm.effect_HICDD_2 <- lmer(Normalized_Energy ~ HICDD +
+                          Avg_Household_Size +
+                          ICE_income_Hispanic +
+                          HICDD*ICE_income_Hispanic +
+                          (1 | groups_county),
+                        data = data_table_2) 
+saveRDS(lm.effect_HICDD_2, "/home/xz578/TEJM/LQMM3/Sensitivity_lmer/ICE_hispanic.rds")
+
+lm.effect_HICDD_3 <- lmer(Normalized_Energy ~ HICDD +
+                          Avg_Household_Size +
+                          ICE_income_Asian +
+                          HICDD*ICE_income_Asian +
+                          (1 | groups_county),
+                        data = data_table_2) 
+saveRDS(lm.effect_HICDD_3, "/home/xz578/TEJM/LQMM3/Sensitivity_lmer/ICE_asian.rds")
+
+sum_income <- summary(lm.effect_HICDD_3)
+sum_income$coefficients[5,1:2]*1000
+lower <- sum_income$coefficients[5,1]*1000 - 1.96*sum_income$coefficients[5,2]*1000
+upper <- sum_income$coefficients[5,1]*1000 + 1.96*sum_income$coefficients[5,2]*1000
+
+round(sum_income$coefficients[5,1]*1000,2)
+round(lower,2)
+round(upper,2)
+sum_income$coefficients[5,3]

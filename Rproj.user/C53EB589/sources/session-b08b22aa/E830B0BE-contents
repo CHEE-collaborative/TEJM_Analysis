@@ -1,0 +1,174 @@
+library(lqmm)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+#Sensitivity Analysis
+
+## True Values
+point_estimate_2 <- lower <- upper <- NULL
+for(i in 1:9){
+  tau = i/10
+  file_name <- paste0("/home/xz578/TEJM/LQMM3/Sensitivity_3/model_HICDD_sensitivity_",tau,".rds")
+  model <- readRDS(file_name)
+  point_estimate_2 <- c(point_estimate_2, model$theta[7:9]* 1000) 
+  # lower <- c(lower, model$tTable[11:16,3])
+  # upper <- c(upper, model$tTable[11:16,4])
+}
+
+# quantiles <- c(rep(as.character(1:9/10), each = 6))
+# category <- rep(factor(c("$50,000-$59,999","$60,000-$69,999", 
+#                          "$70,000-$79,999","$80,000-$89,999", 
+#                          "$90,000-$99,999",">= $100,000"),
+#                        levels = c("$50,000-$59,999","$60,000-$69,999", 
+#                                   "$70,000-$79,999","$80,000-$89,999", 
+#                                   "$90,000-$99,999",">= $100,000")),9)
+
+quantiles <- c(rep(as.character(1:9/10), each = 3))
+category <- rep(factor(c("$50,000-$69,999","$70,000-$89,999", 
+                         ">= $90,000"),
+                       levels = c("$50,000-$69,999","$70,000-$89,999", 
+                                  ">= $90,000")),9)
+slope_income <- data.frame(category = category,
+                           quantiles = quantiles,
+                           point_estimate = point_estimate_2)
+# lower = lower,
+# upper = upper)
+min(point_estimate_2)
+max(point_estimate_2)
+
+min_value <- -0.3060493 #-0.3168422
+max_value <- 0.4549083 #0.472287
+p2 <- ggplot(slope_income, aes(x = category, y = quantiles, fill = point_estimate)) +
+  geom_tile(color = "white") +  
+  scale_fill_viridis_c(name = "Point Estimate (Kwh)",
+                       limits = c(min_value, max_value)) +
+  theme_minimal() +
+  labs(title = "Observed Data",
+       y = "Quantiles",
+       x = "Income Groups") +
+  theme(axis.text = element_text(size = 12, face = "bold"),
+        axis.text.x = element_text(size = 6, face = "bold",
+                                   angle = 20, hjust = 1),
+        axis.title = element_text(size = 8, face = "bold"),
+        legend.position = "right",
+        legend.key.height = unit(1, 'cm'),
+        legend.title = element_text(size = 8,
+                                    face = "bold"),
+        plot.title = element_text(face = "bold", size = 10))+
+  theme(legend.position = "none")
+p2
+
+
+
+
+## Without 2020
+point_estimate_3 <- lower <- upper <- NULL
+for(i in 1:9){
+  tau = i/10
+  file_name <- paste0("/home/xz578/TEJM/LQMM3/Sensitivity_3/model_HICDD_sensitivity_2020_",tau,".rds")
+  model <- readRDS(file_name)
+  point_estimate_3 <- c(point_estimate_3, model$theta[7:9]* 1000) 
+  # lower <- c(lower, model$tTable[11:16,3])
+  # upper <- c(upper, model$tTable[11:16,4])
+}
+min(point_estimate_3)
+max(point_estimate_3)
+
+slope_income <- data.frame(category = category,
+                           quantiles = quantiles,
+                           point_estimate = point_estimate_3)
+
+# min_value <- min(slope_income$point_estimate)
+# max_value <- max(slope_income$point_estimate)
+p3 <- ggplot(slope_income, aes(x = category, y = quantiles, fill = point_estimate)) +
+  geom_tile(color = "white") +  
+  scale_fill_viridis_c(name = "Point Estimate (Kwh)",
+                       limits = c(min_value, max_value)) +
+  theme_minimal() +
+  labs(title = "Imputed Data without 2020",
+       y = "Quantiles",
+       x = "Income Groups") +
+  theme(axis.title.x = element_blank(),
+        axis.text = element_text(size = 12, face = "bold"),
+        axis.text.x = element_blank(),
+        axis.title = element_text(size = 8, face = "bold"),
+        legend.position = "right",
+        legend.key.height = unit(1, 'cm'),
+        legend.title = element_text(size = 8,
+                                    face = "bold"),
+        plot.title = element_text(face = "bold", size = 10))
+p3
+
+#More groups with imputed energy data
+point_estimate_1 <- lower <- upper <- NULL
+for(i in 1:9){
+  tau = i/10
+  file_name <- paste0("/home/xz578/TEJM/LQMM3/Sensitivity/model_imputed_",tau,".rds")
+  model <- readRDS(file_name)
+  point_estimate_1 <- c(point_estimate_1, model$theta[7:9]* 1000)
+  # lower <- c(lower, model$theta[11:16])
+  # upper <- c(upper, model$theta[11:16])
+}
+min(point_estimate_1)
+max(point_estimate_1)
+
+
+slope_income <- data.frame(category = category,
+                           quantiles = quantiles,
+                           point_estimate = point_estimate_1)
+# lower = lower,
+# upper = upper)
+
+# min_value <- min(slope_income$point_estimate)
+# max_value <- max(slope_income$point_estimate)
+
+p1 <- ggplot(slope_income, aes(x = category, y = quantiles, fill = point_estimate)) +
+  geom_tile(color = "white") +  
+  scale_fill_viridis_c(name = "Point Estimate (Mwh)",
+                       limits = c(min_value, max_value)) +
+  theme_minimal() +
+  labs(title = "Imputed Data",
+       y = "Quantiles",
+       x = "Income Groups") +
+  theme(axis.title.x = element_blank(),
+        axis.text = element_text(size = 12, face = "bold"),
+        axis.text.x = element_blank(),
+        axis.title = element_text(size = 8, face = "bold"),
+        legend.position = "right",
+        legend.key.height = unit(1, 'cm'),
+        legend.title = element_text(size = 8,
+                                    face = "bold"),
+        plot.title = element_text(face = "bold", size = 10))+
+  theme(legend.position = "none")
+p1
+
+
+library(gtable)
+library(grid)
+library(gridExtra)
+grid.arrange(p1, p3 +
+               theme(legend.position = "none"), p2, nrow = 2, ncol = 2)
+
+
+g1 <- ggplotGrob(p1)
+g2 <- ggplotGrob(p2)
+g3 <- ggplotGrob(p3)
+max_width <-unit.pmax(g1$widths, g2$widths, g3$widths)
+max_heights <-unit.pmax(g1$heights, g2$heights, g3$heights)
+g1$widths <- max_width
+g2$widths <- max_width
+g3$widths <- max_width
+# g1$heights <- max_heights
+# g2$heights <- max_heights
+# g3$heights <- max_heights
+
+grid.arrange(g1, g3, g2, nrow = 3, heights = c(1, 1, 1.2))
+
+
+
+p2 + theme(axis.text.x = element_text(size = 6, face = "bold",angle = 0, hjust = 0.5)) +  
+  labs(title = "") +
+  scale_fill_viridis_c(name = "Point Estimate (Kwh)")+
+  theme(legend.position = "right")
+
+p2

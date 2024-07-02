@@ -1,0 +1,78 @@
+## Group Average 
+data_energy <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat.rds") %>%
+  group_by(Median_Income_cat,year, month) %>%
+  summarize(Total_Energy = sum(Total_Energy), Households = sum(Households)) %>%
+  mutate(normalized_energy_use = Total_Energy/Households*1000) %>%
+  mutate(times = paste0(month, ".",year)) %>%
+  mutate(times = factor(times)) %>%
+  mutate(times2 = ifelse(month == 5, "May", 
+                         ifelse(month == 6, "Jun", 
+                                ifelse(month == 7, "Jul", 
+                                       ifelse(month == 8, "Aug", 
+                                              ifelse(month == 9, "Sep", NA)))))) %>%
+  mutate(times2 = factor(times2, levels = c("May", "Jun", "Jul", "Aug", "Sep")))
+
+levels(data_energy$Median_Income_cat) <- c("< $50,000","$50,000-$69,999", "$70,000-$89,999", ">= $90,000")
+
+p1 <- ggplot(data_energy, aes(x = times2, y = normalized_energy_use, 
+                              color = Median_Income_cat, 
+                              group = Median_Income_cat,
+                              shape = Median_Income_cat)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(#title = "Average Energy Use per",
+    x = "Month",
+    y = "Average energy use per household (Kwh)",
+    color = "Income Groups",
+    shape = "Income Groups") +
+  scale_shape_manual(values = c(16, 17, 18,15)) +
+  scale_x_discrete(breaks = function(x) x[seq_along(x) %% 2 == 1]) +
+  facet_wrap(~ year, scales = "free_x") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(size = 12, face = "bold",hjust = 1),  
+    axis.text.y = element_text(size = 12, face = "bold"),  
+    axis.title.x = element_text(size = 14, face = "bold"), 
+    axis.title.y = element_text(size = 14, face = "bold"),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.position = c(1, 0), 
+    # legend.position = "none",
+    legend.justification = c(1.75, -0.6), 
+    # legend.key.size = unit(1.5, "lines"),
+    legend.text = element_text(size = 12),  # Increase legend text size
+    legend.title = element_text(size = 14))
+p1
+# legend_plot <- cowplot::get_legend(p1)
+# p2 <- cowplot::plot_grid(p1 + theme(legend.position = "none"), 
+#                          legend_plot, 
+#                          ncol = 2, 
+#                          rel_widths = c(5, 1))
+# p2
+## Distribution of HICDD and slopes
+set.seed(123)
+n <- 100
+data <- data.frame(
+  HICDD = runif(n, 0, 1),   # Random HICDD values between 0 and 1
+  Y = rnorm(n, 50, 10),
+  IncomeGroup = factor(sample(c("50,000-69,999", "70,000-89,999", ">= 90,000"), size = n, replace = TRUE))
+)
+
+# Create the combined plot
+p <- ggplot(data, aes(x = HICDD)) +
+  # Add histogram at the top
+  geom_histogram(data = data, binwidth = 0.1, fill = "grey70", color = "black") +
+  # Add line plot at the bottom
+  geom_line(aes(y = Y, group = IncomeGroup, color = IncomeGroup), position = position_dodge(0.1), size = 1) +
+  facet_grid(vars(IncomeGroup), scales = "free_y", space = "free_y", switch = "y") +
+  labs(
+    # title = "Line Plot Grouped by Income with HICDD Distribution",
+    x = "HICDD",
+    y = "Estimated HICDD:Income"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.background = element_blank(),
+    strip.placement = "outside"
+  )
+
+p

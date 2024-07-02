@@ -1,0 +1,232 @@
+#Load Packages
+library(dplyr)
+library(sf)
+library(tigris)
+library(ggplot2)
+library(sf)
+library(readxl)
+library(daymetr)
+library(weathermetrics)
+library(tidycensus)
+library(ncdf4)
+library(raster)
+library(exactextractr)
+library(purrr)
+library(ggridges)
+library(sp)
+library(lmtest)
+library(furrr)
+library(foreach)
+library(doParallel)
+library(parallel)
+library(iterators)
+library(usmap)
+library(stringr)
+library(here)
+library(gapfill)
+library(tidyverse)
+library(sf)
+library(here)
+library(readxl)
+library(ncdf4)
+library(raster)
+library(tidycensus)
+library(daymetr)
+library(tidyr)
+library(tigris)
+library(exactextractr)
+library(terra)
+library(sp)
+library(janitor)
+sf_use_s2(FALSE)
+
+
+# #Load Buildings Data with Height
+# buildings_data <- st_read("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/buildings_with_com_and_zip_and_heights_and_ratios_imputed.geojson") %>%
+#   mutate(occupied_ratio = ifelse(is.na(occupied_ratio), 1, occupied_ratio)) %>%
+#   mutate(effective_area = area * occupied_ratio)
+# c_joined <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/c_joined.rds")
+# # community_area <- read.csv("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/community_total_building_areas_True.csv")[,-1] %>% filter(!is.na(COM_NAME))
+uer_communities = st_read("/home/xz578/TEJM/TEJM-main/anna/data/Uploaded Files/communites_transformed.geojson")
+zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+zctas <- st_transform(zctas, crs = crs(uer_communities))
+
+# 
+# #Get Community Energy Data
+# # Clean Community Energy Data
+# community_energy_data = c_joined
+# all_communities_all_time <- data.frame()
+# all_communities <- buildings_data %>% 
+#   st_drop_geometry(.) %>% 
+#   dplyr::select(COM_NAME,COM_TYPE) %>%
+#   unique() %>%
+#   filter(!is.na(COM_NAME), !is.na(COM_TYPE))
+# 
+# for(selected_month in 5:9){
+#   for(selected_year in 2016:2020){
+#     
+#     temp <- all_communities%>% mutate(year = selected_year, month = selected_month)
+#     all_communities_all_time <- bind_rows(all_communities_all_time, temp)
+#     
+#   }
+# }
+# 
+# community_energy_all_time <- community_energy_data %>% 
+#   st_drop_geometry() %>%
+#   ungroup() %>%
+#   mutate(COM_NAME = com_name,
+#          COM_TYPE = com_type,
+#          COM_COUNTY = county_name,
+#          year = as.integer(year),
+#          month = as.integer(month)) %>%
+#   dplyr::select(COM_NAME, COM_TYPE, number_of_accounts, value, year, month) %>%
+#   filter(!is.na(value)) %>%
+#   arrange(desc(number_of_accounts)) %>%
+#   group_by(COM_NAME, COM_TYPE,year, month) %>%
+#   slice_head(n = 1)
+# 
+# 
+# all_communities_energy_all_time <- all_communities_all_time %>%
+#   left_join(community_energy_all_time, by = c("COM_NAME", "COM_TYPE","year","month")) %>%
+#   mutate(value = as.numeric(value)) %>%
+#   mutate(number_of_accounts = as.numeric(number_of_accounts))
+# 
+# ##Impute Community Energy Data. This dataset will only be used for TEJM map.
+# # all_communities_energy_all_time_imputed <- all_communities_energy_all_time %>%
+# #   group_by(COM_NAME,COM_TYPE,month) %>%
+# #   arrange(year) %>%
+# #   mutate(value_imputed = 
+# #            as.numeric(ifelse(rep(all(is.na(value)),length(year)), NA,
+# #                              na.approx(value, year,rule = 2)))) %>%
+# #   ungroup() %>%
+# #   group_by(COM_NAME,COM_TYPE,year) %>%
+# #   arrange(month) %>%
+# #   mutate(value_imputed = 
+# #            as.numeric(ifelse(rep(all(is.na(value_imputed)),length(month)), NA,
+# #                              na.approx(value_imputed, month,rule = 2)))) %>%
+# #   ungroup()
+# saveRDS(all_communities_energy_all_time, "/home/xz578/TEJM/TEJM-main/anna/data/energy_data/all_communities_energy_all_time.rds")
+
+all_communities_energy_all_time <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/all_communities_energy_all_time.rds")
+
+#Read tif data of population density 30m
+file_path <- "/home/xz578/TEJM/TEJM-main/dasy_tifs/tifs"
+files <- list.files(path = file_path, pattern = "*", all.files = FALSE, full.names = FALSE, recursive = FALSE)
+files_NY <- files[which(substr(files,11,12) == "36")]
+pop_data_list <- lapply(paste0(file_path,"/",files_NY),rast)
+
+#Combine them into a state
+merged_raster <- terra::merge(pop_data_list[[1]], pop_data_list[[2]], pop_data_list[[3]], 
+                              pop_data_list[[4]], pop_data_list[[5]], pop_data_list[[6]], 
+                              pop_data_list[[7]], pop_data_list[[8]], pop_data_list[[9]], 
+                              pop_data_list[[10]], pop_data_list[[11]], pop_data_list[[12]], 
+                              pop_data_list[[13]], pop_data_list[[14]], pop_data_list[[15]], 
+                              pop_data_list[[16]], pop_data_list[[17]], pop_data_list[[18]], 
+                              pop_data_list[[19]], pop_data_list[[20]], pop_data_list[[21]], 
+                              pop_data_list[[22]], pop_data_list[[23]], pop_data_list[[24]], 
+                              pop_data_list[[25]], pop_data_list[[26]], pop_data_list[[27]], 
+                              pop_data_list[[28]], pop_data_list[[29]], pop_data_list[[30]], 
+                              pop_data_list[[31]], pop_data_list[[32]], pop_data_list[[33]], 
+                              pop_data_list[[34]], pop_data_list[[35]], pop_data_list[[36]], 
+                              pop_data_list[[37]], pop_data_list[[38]], pop_data_list[[39]], 
+                              pop_data_list[[40]], pop_data_list[[41]], pop_data_list[[42]], 
+                              pop_data_list[[43]], pop_data_list[[44]], pop_data_list[[45]], 
+                              pop_data_list[[46]], pop_data_list[[47]], pop_data_list[[48]], 
+                              pop_data_list[[49]], pop_data_list[[50]], pop_data_list[[51]], 
+                              pop_data_list[[52]], pop_data_list[[53]], pop_data_list[[54]], 
+                              pop_data_list[[55]], pop_data_list[[56]], pop_data_list[[57]], 
+                              pop_data_list[[58]], pop_data_list[[59]], pop_data_list[[60]], 
+                              pop_data_list[[61]], pop_data_list[[62]])
+
+plot(merged_raster)
+
+merged_raster_project <- terra::project(merged_raster, crs(uer_communities))
+
+## Obtain total unit of population for each community
+community_total_pop <- exact_extract(merged_raster_project,uer_communities, append_cols = T, 
+                                     fun = function(values,coverage_fractions){sum(values*coverage_fractions, na.rm = T)})
+uer_communities$result <- community_total_pop$result
+
+zcta_total_pop <- exact_extract(merged_raster_project,zctas, append_cols = T, 
+                                fun = function(values,coverage_fractions){sum(values*coverage_fractions, na.rm = T)})
+## Read Validation Data
+validation <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/Dasy_Test/validation.rds")
+
+test <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/energy_zcta_summary.rds")
+
+## Create a function for zcta energy use, based on energy per unit
+Dasy_New <- function(){
+  
+  energy_all <- data.frame()
+  
+  for (selected_month in 5:9) {
+    for (selected_year in 2016:2020) {
+      
+      cat("Processing Month:", selected_month, "Year:", selected_year, "\n")
+      
+      
+      validation_month_year <- validation %>%
+        filter(month == selected_month, year == selected_year)
+      
+      community_energy_data_month_year <- all_communities_energy_all_time %>%
+        filter(month == selected_month, year == selected_year)
+      
+      # Add the area of the buildings for each community as a column in the dataset
+      result <- left_join(community_energy_data_month_year, uer_communities, by = c("COM_NAME","COM_TYPE"))
+      
+      ################################################################################
+      
+      # Calculate the energy used per person for each community
+      result$energy_per_unit <- result$value / result$result
+      result$energy_per_unit <- ifelse(is.infinite(result$energy_per_unit), NA, result$energy_per_unit)
+      result <- st_sf(result)
+      
+      # Obtain the energy per unit raster object for each community
+      community_energy_raster <- terra::rasterize(result, merged_raster_project, field = "energy_per_unit", fun = mean)
+      
+      # Multiply energy_per_unit by the population
+      energy_per_cell <- merged_raster_project
+      energy_per_cell[] <- merged_raster_project[] * community_energy_raster[]
+    
+      # Aggregate up to the ZCTA level, adding together energy per building
+      energy_per_zcta_dasy <- exact_extract(energy_per_cell,zctas, append_cols = T, 
+                                            fun = function(values,coverage_fractions){if(!any(is.na(values))){return(sum(values*coverage_fractions, na.rm= T))}else{return(NA)}})
+      energy_per_zcta_dasy <- energy_per_zcta_dasy %>% 
+        mutate(GEOID = ZCTA5CE10) %>% 
+        mutate(Imputed_Energy = result) %>% 
+        st_drop_geometry() %>% 
+        dplyr::select(GEOID, Imputed_Energy)
+        
+      validation_month_year <- validation_month_year %>%
+        left_join(energy_per_zcta_dasy, by = c("GEOID"))
+      
+      energy_all <- bind_rows(energy_all,validation_month_year)
+    }
+  }
+  
+  MSE <- mean((energy_all$True_Energy-energy_all$Imputed_Energy)^2,na.rm = T)
+
+  result <- list(MSE = MSE, data = energy_all)
+  return(result)
+}
+
+
+result <- Dasy_New()
+result$MSE
+
+data <- result$data
+
+saveRDS(data, "/home/xz578/TEJM/TEJM-main/anna/data/Dasy_Test/energy_data_New.rds")
+# saveRDS(data, "/home/xz578/TEJM/TEJM-main/anna/data/Dasy_Test/energy_data_imputed.rds")
+
+test <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/Dasy_Test/energy_data_New.rds")
+test2 <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/Dasy_Test/energy_data.rds")
+mean((test$True_Energy-test$Imputed_Energy)^2,na.rm = T)
+mean((test2$True_Energy-test2$total_energy_times_area)^2,na.rm = T)
+sum((!is.na(test$True_Energy))|(!is.na(test$Imputed_Energy)))
+
+test3 <- test[which(!is.na(test2$total_energy_times_area)),]
+
+
+
+

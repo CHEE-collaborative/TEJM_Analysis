@@ -1,0 +1,498 @@
+---
+title: "Buildings Download and Cleaning"
+output: html_document
+date: '2023-06-01'
+---
+
+```{r}
+################################################################################
+################################## NOTE ########################################
+################################################################################
+
+# This script requires files to be downloaded into your computer prior to 
+# running. These files include:
+#
+# - Gridded population of the world (GPW) .zip files for 2000, 2005, 2010, 2015,
+#   and 2020. These an be downloaded from this website 
+#   https://sedac.ciesin.columbia.edu/data/set/gpw-v4-population-count-rev11/data-download
+#
+# - Microsoft Buildings Dataset. This can be downloaded using the following link.
+#   Scroll down to list of states and download the file for the state of interest
+#   https://github.com/microsoft/USBuildingFootprints
+#   
+# Download these zip files to this location 
+# here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################ load library ##################################
+################################################################################
+
+#library(geojsonR)
+#library(geojsonsf)
+library(maptools)
+library(raster)
+#library(rgdal)
+#library(rgeos)
+#library(arsenal)
+library(here)
+library(sf)
+library(sp)
+library(tidycensus) 
+library(here)
+sf_use_s2(FALSE)
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################# Constants ####################################
+################################################################################
+
+GEOGRAPHIC_RESOLUTION = "block"
+
+ANNA_DATADIR = "anna"
+
+DATA_DATADIR <- file.path(ANNA_DATADIR, "data")
+
+BUILDINGS_DATADIR = file.path(DATA_DATADIR, "buildings_data")
+
+POPULATION_DATADIR = file.path(DATA_DATADIR, "population_data")
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+########################## Unzipping Necessary Files ###########################
+################################################################################
+
+# Set the name of the folder to create
+new_folder_name <- "uploaded_zip_files"
+
+# Create the folder if it doesn't exist already
+new_folder_path <- file.path(here(DATA_DATADIR, "Uploaded Files", new_folder_name))
+if (!file.exists(new_folder_path)) {
+  dir.create(new_folder_path)
+  print("Folder created successfully.")
+} else {
+  print("Folder already exists.")
+}
+
+# assigning a location to unzip the files
+buildings_unzipped = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "NewYork.geojson.zip")
+
+# assigning the folder for the zip file to go in
+destination_folder = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+# unzipping the zip file
+files = unzip(zipfile = buildings_unzipped, exdir = destination_folder)
+
+# selecting the file that we want
+buildings_file = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "NewYork.geojson")
+
+# move desired file to uploaded files location
+file.rename(buildings_file, here(DATA_DATADIR, "Uploaded Files", "NewYork.geojson"))
+
+
+# assigning a location to unzip the files
+population_unzipped = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2000_30_sec_tif.zip")
+
+# assigning the folder for the zip file to go in
+destination_folder = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+# unzipping the zip file
+files = unzip(zipfile = population_unzipped, exdir = destination_folder)
+
+# selecting the file that we want
+population_file = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2000_30_sec.tif")
+
+# move desired file to uploaded files location
+file.rename(population_file, here(DATA_DATADIR, "Uploaded Files", "gpw-v4-population-density-rev11_2000_30_sec.tif"))
+
+
+# assigning a location to unzip the files
+population_unzipped = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2005_30_sec_tif.zip")
+
+# assigning the folder for the zip file to go in
+destination_folder = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+# unzipping the zip file
+files = unzip(zipfile = population_unzipped, exdir = destination_folder)
+
+# selecting the file that we want
+population_file = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2005_30_sec.tif")
+
+# move desired file to uploaded files location
+file.rename(population_file, here(DATA_DATADIR, "Uploaded Files", "gpw-v4-population-density-rev11_2005_30_sec.tif"))
+
+
+# assigning a location to unzip the files
+population_unzipped = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2010_30_sec_tif.zip")
+
+# assigning the folder for the zip file to go in
+destination_folder = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+# unzipping the zip file
+files = unzip(zipfile = population_unzipped, exdir = destination_folder)
+
+# selecting the file that we want
+population_file = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2010_30_sec.tif")
+
+# move desired file to uploaded files location
+file.rename(population_file, here(DATA_DATADIR, "Uploaded Files", "gpw-v4-population-density-rev11_2010_30_sec.tif"))
+
+
+# assigning a location to unzip the files
+population_unzipped = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2015_30_sec_tif.zip")
+
+# assigning the folder for the zip file to go in
+destination_folder = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+# unzipping the zip file
+files = unzip(zipfile = population_unzipped, exdir = destination_folder)
+
+# selecting the file that we want
+population_file = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2015_30_sec.tif")
+
+# move desired file to uploaded files location
+file.rename(population_file, here(DATA_DATADIR, "Uploaded Files", "gpw-v4-population-density-rev11_2015_30_sec.tif"))
+
+
+# assigning a location to unzip the files
+population_unzipped = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2020_30_sec_tif.zip")
+
+# assigning the folder for the zip file to go in
+destination_folder = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files")
+
+# unzipping the zip file
+files = unzip(zipfile = population_unzipped, exdir = destination_folder)
+
+# selecting the file that we want
+population_file = here(DATA_DATADIR, "Uploaded Files", "uploaded_zip_files", "gpw-v4-population-density-rev11_2020_30_sec.tif")
+
+# move desired file to uploaded files location
+file.rename(population_file, here(DATA_DATADIR, "Uploaded Files", "gpw-v4-population-density-rev11_2020_30_sec.tif"))
+
+
+
+# remove all files from uploaded_zip_files that arent zip files
+
+# Set the path to the "Uploaded Files" directory
+uploaded_files_directory <- here(DATA_DATADIR, "Uploaded Files")
+
+# Set the path to the "uploaded_zip_files" directory
+uploaded_zip_files_directory <- file.path(uploaded_files_directory, "uploaded_zip_files")
+
+# Get the list of files in the "uploaded_zip_files" directory
+files_to_remove <- list.files(uploaded_zip_files_directory, full.names = TRUE)
+
+# Remove files that don't end with the ".zip" extension
+for (file in files_to_remove) {
+  if (!endsWith(file, ".zip")) {
+    file.remove(file)
+  }
+}
+
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+############################### Maintenance ####################################
+################################################################################
+
+census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = F)
+
+# create data folder if it doesn't already exist
+if(!dir.exists(here(DATA_DATADIR))){dir.create(here(DATA_DATADIR))}
+
+if(!dir.exists(here(BUILDINGS_DATADIR))){dir.create(here(BUILDINGS_DATADIR))}
+
+if(!dir.exists(here(POPULATION_DATADIR))){dir.create(here(POPULATION_DATADIR))}
+
+################################################################################
+################################################################################
+
+```
+
+```{r}
+################################################################################
+################### Load and Convert Buildings Dataset #########################
+################################################################################
+
+# read in building polygons
+sf_use_s2(FALSE)
+BUILDINGS <- st_read("/home/xz578/TEJM/TEJM-main/anna/data/Uploaded Files/NewYork.geojson")
+
+# convert the polygons to centroids for cleaning purposes
+BUILDINGS_CENTROID <- st_centroid(BUILDINGS)
+
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+###################### Function to Download Census Data ########################
+################################################################################
+
+GetCensusData <- function(geography) {
+  census_data <- get_decennial(
+    geography = geography,
+    variables = c("Total_pop" = "P001001",
+                  "Total_status_units" = "H003001",
+                  "Vacant" = "H003003",
+                  "Occupied" = "H003002",
+                  "Total_units" = "H001001"),
+    year = 2010,
+    output = "wide",
+    geometry = TRUE,
+    state = 36
+  ) %>%
+    st_transform(crs = st_crs(4326)) %>%
+    filter(!st_is_empty(.))
+  
+  return(census_data)
+}
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+########### Downloading and Interpolating Population Data from GPW #############
+################################################################################
+
+# uploading gpw rasters from file
+
+#DC: doesnt use 'here' and not reproducible 
+#># AS: resolved. i dont think we can make this reproducuble without people downloading these files locally.
+
+gpw_2000 <- raster(here("anna", "data", "Uploaded Files", "gpw_v4_population_density_rev11_2000_30_sec.tif"))
+gpw_2005 <- raster(here("anna", "data", "Uploaded Files", "gpw_v4_population_density_rev11_2005_30_sec.tif"))
+gpw_2010 <- raster(here("anna", "data", "Uploaded Files", "gpw_v4_population_density_rev11_2010_30_sec.tif"))
+gpw_2015 <- raster(here("anna", "data", "Uploaded Files", "gpw_v4_population_density_rev11_2015_30_sec.tif"))
+gpw_2020 <- raster(here("anna", "data", "Uploaded Files", "gpw_v4_population_density_rev11_2020_30_sec.tif"))
+gpw_2020 <- raster("/home/xz578/TEJM/TEJM-main/anna/data/Uploaded Files/gpw_v4_population_density_rev11_2020_30_sec.tif")
+# using gadm function to get NY state coordinates
+usa = geodata::gadm("USA", level=1, path = ".")
+aoi <- usa[usa$NAME_1 == "New York", ]
+
+# finding the extent of new york state 
+aoi <- st_as_sf(aoi)
+ny_extent <- st_as_sfc(aoi) %>% st_geometry() %>% st_bbox()
+
+# Crop the raster to the extent of New York State
+ny_gpw_2000 <- crop(gpw_2000, ny_extent)
+ny_gpw_2005 <- crop(gpw_2005, ny_extent)
+ny_gpw_2010 <- crop(gpw_2010, ny_extent)
+ny_gpw_2015 <- crop(gpw_2015, ny_extent)
+ny_gpw_2020 <- crop(gpw_2020, ny_extent)
+
+# Define the list of available years
+available_years <- c(2000, 2005, 2010, 2015, 2020)
+
+# Define the list to store interpolated rasters
+interpolated_rasters <- list()
+
+# Iterate through the years
+for (year in 2000:2020) {
+  if (year %in% available_years) {
+    # Use available raster as template
+    raster_name <- paste0("ny_gpw_", year)
+    raster_data <- get(raster_name)
+    interpolated_raster <- raster_data
+  } else {
+    # Use empty template raster
+    interpolated_raster <- raster(ny_gpw_2020)  
+    interpolated_raster[] <- NA
+  }
+  
+  interpolated_rasters[[as.character(year)]] <- interpolated_raster
+}
+
+# Interpolate between the available years
+for (i in 1:(length(available_years) - 1)) {
+  year1 <- available_years[i]
+  year2 <- available_years[i + 1]
+  raster1 <- interpolated_rasters[[as.character(year1)]]
+  raster2 <- interpolated_rasters[[as.character(year2)]]
+  
+  # Calculate the difference between neighboring rasters
+  raster_diff <- raster2 - raster1
+  
+  # Fill in the missing rasters
+  for (year in (year1 + 1):(year2 - 1)) {
+    ratio <- (year - year1) / (year2 - year1)
+    interpolated_raster <- raster1 + (raster_diff * ratio)
+    interpolated_rasters[[as.character(year)]] <- interpolated_raster
+    
+  # Save the raster to a file
+  raster_file <- file.path(here(POPULATION_DATADIR), paste0("ny_gpw_", year, ".tif"))
+  writeRaster(interpolated_raster, filename = raster_file, format = "GTiff", overwrite = TRUE)
+    
+  }
+}
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+##### Removing Buildings in Areas with <1 Person per Km^2 According to GPW #####
+################################################################################
+# For merged raster, see Energy_New_Dasy.R
+# merged_raster_project <- terra::project(merged_raster, crs(BUILDINGS_CENTROID))
+# ny_gpw_2020 <- raster(merged_raster_project)
+
+# converting ny_gpw_2020 to a SpatialPolygonsDataFrame
+gpw_as_spatpoly <- as(ny_gpw_2020, 'SpatialPolygonsDataFrame')
+
+# converting gpw_as_spatpoly to an sf object
+gpw_as_sf <- st_as_sf(gpw_as_spatpoly)
+
+# removing NA values from gpw_as_sf
+gpw_as_sf <- na.omit(gpw_as_sf)
+
+# Transform EPSG:9122 to EPSG:4326
+gpw_as_sf <- st_transform(gpw_as_sf, crs = "EPSG:4326")
+
+# gpw_as_sf_new <- gpw_as_sf
+
+# BUILDINGS_CENTROID_2 <- BUILDINGS_CENTROID
+# performing intersection between population and buildings
+gpw_buildings_intersect <- st_intersection(gpw_as_sf_new, BUILDINGS_CENTROID)
+# within <- st_within(BUILDINGS_CENTROID, gpw_as_sf, sparse = T)
+# saveRDS(within, "/gpfs/gibbs/project/huang/xz578/buildings_within.rds")
+# plot(gpw_as_sf$geometry)
+#st_intersection(gpw_as_sf_new)
+# removing buildings located within sq km with <1 person population
+gpw_filtered_buildings <- gpw_buildings_intersect[gpw_buildings_intersect$neon.dasy.36.001 > 0 , ]
+test <- lapply(within, length)
+sum(unlist(test))
+# removing large files to free space
+# rm(BUILDINGS_CENTROID)
+# rm(gpw_as_spatpoly)
+# rm(gpw_as_sf)
+# rm(gpw_buildings_intersect)
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+##### Removing Buildings Using exact_extract strategy #####
+################################################################################
+# For merged raster, see Energy_New_Dasy_4.5.R
+merged_raster_project <- terra::project(merged_raster, crs(BUILDINGS_CENTROID))
+# sum(merged_raster_project[], na.rm=T)
+building_with_pop <- exact_extract(merged_raster_project,BUILDINGS, append_cols = T, 
+                                     fun = function(values,coverage_fractions){sum(values*coverage_fractions, na.rm = T)})
+
+building_pop <- building_with_pop$result
+building_area <- st_area(BUILDINGS)
+BUILDINGS_CENTROID$population <- building_pop
+BUILDINGS_CENTROID$area <- building_area
+summary(building_with_pop$result)
+sum(building_with_pop$result > 0.25)
+sum(building_with_pop$result > 0)
+
+gpw_filtered_buildings <- BUILDINGS_CENTROID[BUILDINGS_CENTROID$population > 0,]
+st_write(gpw_filtered_buildings, "/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/New_cleaned_buildings_0.geojson", driver = "GeoJSON")
+
+# gpw_filtered_buildings <- building_with_pop[building_with_pop$result > 0.25,]
+
+# removing large files to free space
+# rm(BUILDINGS_CENTROID)
+# rm(gpw_as_spatpoly)
+# rm(gpw_as_sf)
+# rm(gpw_buildings_intersect)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+# ################################################################################
+# ### Removing Buildings in <1 Person per Census Block According to Decennial ####
+# ################################################################################
+
+# getting census data based on GEOGRAPHIC_RESOLUTION
+census_data <- GetCensusData(GEOGRAPHIC_RESOLUTION) %>% mutate(occupied_ratio = Occupied/Total_units)
+# test_data <- st_drop_geometry(census_data) 
+# performing intersection between census_data and gpw_filtered_buildings
+census_buildings_intersect <- st_intersection(census_data, gpw_filtered_buildings)
+
+
+# DO NOT DO IT FOR NEW POPULATION FILTERED BUILDING DATA
+# removing buildings in census blocks with less than 1 person population. 
+census_filtered_buildings <- census_buildings_intersect[census_buildings_intersect$Total_pop >= 1, ] %>%
+  mutate(occupied_ratio = ifelse(is.nan(occupied_ratio), 1, occupied_ratio)) %>%
+  select(GEOID,NAME, Total_pop, occupied_ratio)
+# test <- st_drop_geometry(census_filtered_buildings)
+# renaming the variable to be more general
+filtered_buildings <- census_filtered_buildings
+
+# removing unused large files to free up space
+# rm(gpw_filtered_buildings)
+# rm(census_data)
+# rm(census_buildings_intersect)
+# rm(census_filtered_buildings)
+#
+# ################################################################################
+# ################################################################################
+```
+
+```{r}
+################################################################################
+############################### Checking Dimensions ############################
+################################################################################
+
+# dim(BUILDINGS)
+# dim(gpw_filtered_buildings)
+# dim(filtered_buildings)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+
+# Perform intersection between BUILDINGS spatial polygons and the filtered building centroids
+intersections <- st_intersects(BUILDINGS, filtered_buildings)
+
+# Checking where data intersects
+building_indices <- which(sapply(intersections, length) > 0)
+
+# Subsetting the building data to only where it intersects with population data
+cleaned_buildings <- BUILDINGS[building_indices, ]
+
+output_file <- file.path(here(DATA_DATADIR),"/buildings_data/cleaned_buildings_new.geojson")
+st_write(cleaned_buildings, output_file, driver = "GeoJSON")
+
+# output_file <- file.path(here(DATA_DATADIR),"/buildings_data/cleaned_buildings_new.geojson")
+# st_write(cleaned_buildings, output_file, driver = "GeoJSON")
+
+# removing large files to free space
+# rm(BUILDINGS)
+# rm(intersections)
+# rm(filtered_buildings)
+
+```
+
+

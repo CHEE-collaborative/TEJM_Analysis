@@ -1,0 +1,131 @@
+library(lqmm)
+library(dplyr)
+library(tidyr)
+
+# data_table_cat <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat_more.rds") %>%
+  # arrange(year, month) %>%
+  # group_by(GEOID) %>%
+  # fill(total_accounts, .direction = "downup") %>%
+  # fill(total_accounts, .direction = "updown")
+
+data_table_cat <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat.rds")%>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_cat <- data_table_cat %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    Total_Energy/Households,
+                                    Total_Energy/total_accounts
+  ))
+
+
+## No 2020 data and use imputed data
+data_table_cat_2 <- data_table_cat %>%
+  filter(!is.na(Total_Energy)) %>%
+  filter(year != 2020) %>%
+  filter(!is.na(Normalized_Energy))
+
+## use true data only
+data_table_true <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat.rds")%>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  # mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy)) %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    True_Energy/Households,
+                                    True_Energy/total_accounts
+  ))%>%
+  filter(!is.na(True_Energy))
+
+taus <- 1:9/10
+for(tau in taus){
+  print(tau)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            # county_fips +
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_true,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/Sensitivity_3/model_HICDD_sensitivity_",tau,".rds"))
+  
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            # county_fips +
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_cat_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/Sensitivity_3/model_HICDD_sensitivity_2020_",tau,".rds"))
+}
+
+taus <- c(0.1, 0.5, 0.9)
+for(tau in taus){
+  print(tau)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Median_Income_cat + Avg_Household_Size +
+                            # county_fips +
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_true,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 6000,
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/Sensitivity_2/model_HICDD_sensitivity_",tau,".rds"))
+
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            # county_fips +
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_cat_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/Sensitivity_2/model_HICDD_sensitivity_2020_",tau,".rds"))
+}
+
+

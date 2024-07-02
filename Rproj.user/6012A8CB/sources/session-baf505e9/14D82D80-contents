@@ -1,0 +1,226 @@
+#Load Packages
+library(dplyr)
+library(sf)
+library(tigris)
+library(ggplot2)
+library(sf)
+library(readxl)
+library(daymetr)
+library(weathermetrics)
+library(tidycensus)
+library(ncdf4)
+library(raster)
+library(exactextractr)
+library(purrr)
+library(ggridges)
+# library(terra)
+# library(MODISTools)
+# library(luna) 
+# library(geodata)
+library(sp)
+library(lmtest)
+library(furrr)
+library(foreach)
+library(doParallel)
+library(parallel)
+library(iterators)
+library(usmap)
+library(stringr)
+library(here)
+library(gapfill)
+sf_use_s2(FALSE)
+
+#Load Data
+community_area <- read.csv("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/community_total_building_areas_True.csv")[,-1] %>% filter(!is.na(COM_NAME))
+# buildings_with_zctas <- read_sf("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/cleaned_buildings_zctas.geojson")
+# buildings_with_communities <- read_sf("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/cleaned_buildings_communities.geojson")
+buildings_with_communities_and_zctas <- read_sf("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/buildings_with_com_and_zip.geojson")
+c_joined <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/c_joined.rds")
+# z_joined <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/energy_zcta_summary.rds")
+uer_communities = st_read("/home/xz578/TEJM/TEJM-main/anna/data/Uploaded Files/communites_transformed.geojson")
+zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+
+#Run imputation for a specific year and month
+community_energy_data = c_joined
+
+# Define the months and years to process
+months <- c(5:9)
+years <- c(2016:2020)
+
+# Clean Community Energy Data
+all_communities_all_time <- data.frame()
+all_communities <- buildings_with_communities_and_zctas %>% 
+  st_drop_geometry(.) %>% 
+  dplyr::select(COM_NAME,COM_TYPE) %>%
+  unique() %>%
+  filter(!is.na(COM_NAME), !is.na(COM_TYPE))
+
+for(selected_month in months){
+  for(selected_year in years){
+    
+   temp <- all_communities%>% mutate(year = selected_year, month = selected_month)
+   all_communities_all_time <- bind_rows(all_communities_all_time, temp)
+   
+  }
+}
+
+community_energy_all_time <- community_energy_data %>% 
+  st_drop_geometry() %>%
+  ungroup() %>%
+  mutate(COM_NAME = com_name,
+         COM_TYPE = com_type,
+         COM_COUNTY = county_name,
+         year = as.integer(year),
+         month = as.integer(month)) %>%
+  dplyr::select(COM_NAME, COM_TYPE, number_of_accounts, value, year, month) %>%
+  filter(!is.na(value)) %>%
+  arrange(desc(number_of_accounts)) %>%
+  group_by(COM_NAME, COM_TYPE,year, month) %>%
+  slice_head(n = 1)
+
+
+all_communities_energy_all_time <- all_communities_all_time %>%
+  left_join(community_energy_all_time, by = c("COM_NAME", "COM_TYPE","year","month")) %>%
+  mutate(value = as.numeric(value)) %>%
+  mutate(number_of_accounts = as.numeric(number_of_accounts))
+
+#Check Distribution of number of accounts for each missing area
+Non_Missing_coms <- all_communities_energy_all_time %>%
+  group_by(COM_NAME, COM_TYPE) %>%
+  filter(!any(is.na(value)))
+
+Missing_coms <- all_communities_energy_all_time %>%
+  anti_join(Non_Missing_coms, by = c("COM_NAME", "COM_TYPE","year","month"))
+
+summ <- Missing_coms %>% group_by(COM_NAME, COM_TYPE) %>% summarise(n=sum(is.na(value)))
+quantile(summ$n,na.rm=T, probs = c(0:10)/10)
+quantile(Missing_coms$number_of_accounts,na.rm=T, probs = c(0:10)/10)
+hist(Missing_coms$number_of_accounts, breaks = 50)
+
+
+summ2 <- summ %>% filter(n>=12)
+Missing_coms_2 <- Missing_coms %>% anti_join(summ2, by = c("COM_NAME", "COM_TYPE"))
+hist(Missing_coms_2$number_of_accounts, breaks = 50)
+  
+saveRDS(all_communities_energy_all_time, "/home/xz578/TEJM/TEJM-main/anna/data/energy_data/all_communities_energy_all_time.rds")
+
+
+##Impute Community Energy Data
+all_communities_energy_all_time_imputed <- all_communities_energy_all_time %>%
+  group_by(COM_NAME,COM_TYPE,month) %>%
+  arrange(year) %>%
+  mutate(value_imputed = 
+           as.numeric(ifelse(rep(all(is.na(value)),length(year)), NA,
+                  na.approx(value, year,rule = 2)))) %>%
+  ungroup() %>%
+  group_by(COM_NAME,COM_TYPE,year) %>%
+  arrange(month) %>%
+  mutate(value_imputed = 
+           as.numeric(ifelse(rep(all(is.na(value_imputed)),length(month)), NA,
+                             na.approx(value_imputed, month,rule = 2)))) %>%
+  ungroup()
+saveRDS(all_communities_energy_all_time_imputed, "/home/xz578/TEJM/TEJM-main/anna/data/energy_data/all_communities_energy_all_time_imputed.rds")
+
+
+all_communities_energy_all_time_imputed$value_imputed
+
+################################################################################
+############### Dasyametric Energy Usage Estimate Calculation ##################
+################################################################################
+################## THIS LOOP TAKES OVER 12 HOURS TO RUN ########################
+################################################################################
+
+# trying to make a loop but not successful yet
+
+# Load required libraries
+library(dplyr)
+library(sf)
+library(ggplot2)
+
+
+# Define the months and years to process
+months_to_process <- c(7)
+years_to_process <- c(2019)
+
+# Initialize a list to store the results for each month and year
+all_comparison_data <- list()
+
+# Loop through each month and year
+for (selected_month in months_to_process) {
+  for (selected_year in years_to_process) {
+    
+    # print statement to let you know which date the code is currently processing
+    cat("Processing Month:", selected_month, "Year:", selected_year, "\n")
+    
+    # Filter community_energy_data for the selected month and year
+    
+    # community_energy_data_month_year <- all_communities_energy_all_time %>%
+    #   filter(month == selected_month, year == selected_year)
+    community_energy_data_month_year <- all_communities_energy_all_time_imputed %>%
+      filter(month == selected_month, year == selected_year)
+    
+    # Add the area of the buildings for each community as a column in the dataset
+    result <- left_join(community_energy_data_month_year, community_area, by = c("COM_NAME","COM_TYPE"))
+    
+    ################################################################################
+    
+    # Calculate the energy used per square meter for each building in the county
+    # result$energy_per_sqm <- result$value / result$building_per_community_area
+    result$energy_per_sqm <- result$value_imputed / result$building_per_community_area
+    
+    # Add energy per square meter to the buildings dataset for each building, according to which community each building is in
+    test <- left_join(buildings_with_communities_and_zctas, st_drop_geometry(result), by = c("COM_NAME","COM_TYPE"))
+    test <- st_drop_geometry(test)
+    # Multiply energy_per_square_meter by the area of the buildings to get energy per building
+    test$energy_per_building <- test$area * test$energy_per_sqm
+    
+    ################################################################################
+    
+    # Replace any building that returns NA for energy value with the average energy value per building of that Community (this takes 30 minutes per run)
+    #INTPTLAT10 and INTPTLON10 identifies the ZCTA area.
+    avg_known_energy_by_zcta <- test %>%
+      group_by(INTPTLAT10, INTPTLON10) %>%
+      summarize(average_per_sqm = ifelse(all(is.na(energy_per_building)),NA,sum(energy_per_building,na.rm = T))/sum(area,na.rm = T))
+      
+
+    test <- test %>% left_join(avg_known_energy_by_zcta, by = c("INTPTLAT10","INTPTLON10"))
+    
+    
+    test[is.na(test$energy_per_building) & is.na(test$COM_NAME),]$energy_per_building = 
+      test[is.na(test$energy_per_building) & is.na(test$COM_NAME),]$average_per_sqm *
+      test[is.na(test$energy_per_building) & is.na(test$COM_NAME),]$area
+    
+    
+    # Aggregate up to the ZCTA level, adding together energy per building
+    energy_per_zcta_dasy <- test %>%
+      group_by(ZCTA5CE10) %>%
+      summarize(total_energy_times_area = sum(energy_per_building, na.rm= T))
+    
+    energy_per_zcta_dasy_strict <- test %>%
+      group_by(ZCTA5CE10) %>%
+      summarize(total_energy_times_area = sum(energy_per_building)) 
+    
+    # Joining dasy data to ZCTAs for plotting
+    energy_per_zcta_dasy <- left_join(zctas, st_drop_geometry(energy_per_zcta_dasy), by = "ZCTA5CE10")
+    energy_per_zcta_dasy_strict <- left_join(zctas, st_drop_geometry(energy_per_zcta_dasy_strict), by = "ZCTA5CE10")
+    
+    # Construct the result name
+    result_name <- paste0("Month", selected_month, "_Year", selected_year)
+    
+    
+    # Define the output file path
+    output_file <- file.path(here(DATA_DATADIR, "energy_data", paste0(result_name, ".geojson")))
+    output_file_strict <- file.path(here(DATA_DATADIR, "energy_data", paste0(result_name,"_strict", ".geojson")))
+    
+    # output_file_impute <- file.path(here(DATA_DATADIR, "energy_data", paste0(result_name,"_impute", ".geojson")))
+    
+    # Save the data to GeoJSON file
+    # st_write(energy_per_zcta_dasy, output_file, driver = "GeoJSON")
+    # st_write(energy_per_zcta_dasy_strict, output_file_strict, driver = "GeoJSON")
+    # st_write(energy_per_zcta_dasy_strict, output_file_impute, driver = "GeoJSON")
+    
+    cat("Saved result for Month:", selected_month, "Year:", selected_year, "to", output_file, "\n")
+    
+  }
+}
+

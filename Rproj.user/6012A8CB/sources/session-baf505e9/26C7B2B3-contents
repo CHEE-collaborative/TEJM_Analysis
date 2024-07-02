@@ -1,0 +1,202 @@
+#Load Packages
+library(dplyr)
+library(tidyr)
+library(sf)
+library(tigris)
+library(ggplot2)
+library(sf)
+library(readxl)
+library(daymetr)
+library(weathermetrics)
+library(tidycensus)
+library(ncdf4)
+library(raster)
+library(exactextractr)
+library(purrr)
+library(ggridges)
+# library(terra)
+# library(MODISTools)
+# library(luna) 
+# library(geodata)
+library(sp)
+library(lmtest)
+library(furrr)
+library(foreach)
+library(doParallel)
+library(parallel)
+library(iterators)
+library(usmap)
+library(stringr)
+library(here)
+library(gapfill)
+library(splines)
+library(lme4)
+library(optimx)
+sf_use_s2(FALSE)
+
+
+#Load Data
+community_area <- read.csv("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/community_total_building_areas_True.csv")[,-1] %>% filter(!is.na(COM_NAME))
+buildings_with_communities_and_zctas <- read_sf("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/buildings_with_com_and_zip_and_heights_imputed.geojson")
+c_joined <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/c_joined.rds")
+uer_communities = st_read("/home/xz578/TEJM/TEJM-main/anna/data/Uploaded Files/communites_transformed.geojson")
+
+all_communities_energy_all_time <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/energy_data/all_communities_energy_all_time.rds")
+
+# Assign Values for each community level area
+buildings_COM <- st_drop_geometry(buildings_with_communities_and_zctas) %>%
+  mutate(Height_cat = factor(Height_cat, levels = c("Low","Low-medium","Medium","Medium-High", "High","Very high"))) %>%
+  mutate(Height = recode(Height_cat,
+                         "Low" = "Low",
+                         "Low-medium" = "Low_medium",
+                         "Medium" = "Medium_High",
+                         "Medium-High" = "Medium_High",
+                         "High" = "Medium_High",
+                         "Very high" = "Medium_High")) %>%
+  group_by(COM_NAME, COM_TYPE, Height) %>%
+  summarise(total_area = sum(area)) %>%
+  pivot_wider(names_from = Height, values_from = total_area) %>%
+  mutate(Low = ifelse(is.na(Low), 0, Low),
+         `Low_medium` = ifelse(is.na(`Low_medium`), 0, `Low_medium`),
+         Medium_High = ifelse(is.na(Medium_High), 0, Medium_High))
+  
+# buildings_COM_2 <- st_drop_geometry(buildings_with_communities_and_zctas) %>%
+#   mutate(Height_cat = factor(Height_cat, levels = c("Low","Low-medium","Medium","Medium-High", "High","Very high"))) %>%
+#   mutate(Height = recode(Height_cat,
+#                          "Low" = "Low",
+#                          "Low-medium" = "Low_medium",
+#                          "Medium" = "Medium",
+#                          "Medium-High" = "Medium",
+#                          "High" = "High",
+#                          "Very high" = "High")) %>%
+#   group_by(COM_NAME, COM_TYPE, Height) %>%
+#   summarise(total_area = sum(area)) %>%
+#   pivot_wider(names_from = Height, values_from = total_area) %>%
+#   mutate(Low = ifelse(is.na(Low), 0, Low),
+#        `Low_medium` = ifelse(is.na(`Low_medium`), 0, `Low_medium`),
+#        Medium = ifelse(is.na(Medium), 0, Medium),
+#        High = ifelse(is.na(High), 0, High))
+
+
+# buildings_COM_ZCTA_2 <- st_drop_geometry(buildings_with_communities_and_zctas) %>%
+#   mutate(Height_cat = factor(Height_cat, levels = c("Low","Low-medium","Medium","Medium-High", "High","Very high"))) %>%
+#   mutate(Height = recode(Height_cat,
+#                          "Low" = "Low",
+#                          "Low-medium" = "Low_medium",
+#                          "Medium" = "Medium",
+#                          "Medium-High" = "Medium",
+#                          "High" = "High",
+#                          "Very high" = "High")) %>%
+#   group_by(COM_NAME, COM_TYPE, Height,ZCTA5CE10) %>%
+#   summarise(total_area = sum(area)) %>%
+#   pivot_wider(names_from = Height, values_from = total_area) %>%
+#   mutate(Low = ifelse(is.na(Low), 0, Low),
+#        `Low_medium` = ifelse(is.na(`Low_medium`), 0, `Low_medium`),
+#        Medium = ifelse(is.na(Medium), 0, Medium),
+#        High = ifelse(is.na(High), 0, High))
+
+
+buildings_COM_energy <- all_communities_energy_all_time %>%
+  left_join(buildings_COM, by = c("COM_NAME","COM_TYPE")) %>%
+  mutate(COM_CAT = paste0(COM_NAME,"_",COM_TYPE)) %>%
+  mutate(year_month = paste0(year,"_",month)) %>%
+  filter(!is.na(value))
+
+# buildings_COM_energy_2 <- all_communities_energy_all_time %>%
+#   left_join(buildings_COM_2, by = c("COM_NAME","COM_TYPE")) %>%
+#   mutate(COM_CAT = paste0(COM_NAME,"_",COM_TYPE)) %>%
+#   mutate(year_month = paste0(year,"_",month)) %>%
+#   filter(!is.na(value))
+
+# Fit Models
+df <- 3
+degree <- 2
+
+year_month <- buildings_COM_energy$year_month
+COM_CAT <- buildings_COM_energy$COM_CAT
+COM_TYPE <- buildings_COM_energy$COM_TYPE
+COM_NAME <- buildings_COM_energy$COM_NAME
+energy <- sqrt(buildings_COM_energy$value)
+low_basis <- bs(buildings_COM_energy$Low,df=df,degree=degree,intercept=F)
+low_med_basis <- bs(buildings_COM_energy$`Low_medium`,df=df,degree=degree,intercept=F)
+med_high_basis <- bs(buildings_COM_energy$Medium_High,df=df,degree=degree,intercept=F)
+
+Low <- scale(buildings_COM_energy$Low)
+Low_medium <- scale(buildings_COM_energy$Low_medium)
+Medium_High <- scale(buildings_COM_energy$Medium_High)
+
+Low_square <- Low^2
+Low_medium_square <- Low_medium^2
+Medium_High_square <- Medium_High^2
+
+data_train <- data.frame(year_month = year_month,COM_TYPE = COM_TYPE, COM_NAME = COM_NAME,
+                         energy = energy, Low = Low, Low_medium = Low_medium, Medium_High = Medium_High,
+                         Low_square =  Low_square,Low_medium_square = Low_medium_square,Medium_High_square = Medium_High_square)
+saveRDS(data_train, "/home/xz578/TEJM/TEJM-main/anna/data/prediction_model/data_train.rds")
+# high_basis <- bs(buildings_COM_energy$High,df=df,degree=degree,intercept=F)
+
+model2 <- lmer(energy ~ -1 + Low + Low_medium + Medium_High + 
+                 (0+ Low + Low_medium + Medium_High|year_month)+
+                 (0+ Low + Low_medium + Medium_High|COM_NAME),
+               control = lmerControl(optCtrl = list(maxfun = 1e6)))
+saveRDS(model2,"/home/xz578/TEJM/TEJM-main/anna/data/prediction_model/model_lmer_NAME.rds") #3 categories, combine medium to high
+
+model3 <- lmer(energy ~ -1 + Low + Low_medium + Medium_High + Low_square + Low_medium_square + Medium_High_square+
+                 (0+ Low + Low_medium + Medium_High + Low_square + Low_medium_square + Medium_High_square|year_month)+
+                 (0+ Low + Low_medium + Medium_High + Low_square + Low_medium_square + Medium_High_square|COM_NAME),
+               control = lmerControl(optCtrl = list(maxfun = 1e6)))
+saveRDS(model3,"/home/xz578/TEJM/TEJM-main/anna/data/prediction_model/model_lmer_nonlinear_NAME.rds")#3 categories, combine medium to high
+
+model1 <- lmer(energy ~ -1 + low_basis + low_med_basis + med_high_basis + 
+                 (0+ low_basis + low_med_basis + med_high_basis|year_month)+
+                 (0+ low_basis + low_med_basis + med_high_basis|COM_TYPE),
+               control = lmerControl(optCtrl = list(maxfun = 1e6)))
+saveRDS(model1,"/home/xz578/TEJM/TEJM-main/anna/data/prediction_model/model_lmer_B_spline1.rds") #df = 3, degree=2, 3 categories, combine medium to high
+
+# Predictions
+year_month <- all_communities_energy_all_time %>% select(COM_NAME,COM_TYPE,year,month)
+
+buildings_COM_ZCTA_SCORE <- st_drop_geometry(buildings_with_communities_and_zctas) %>%
+  mutate(Height_cat = factor(Height_cat, levels = c("Low","Low-medium","Medium","Medium-High", "High","Very high"))) %>%
+  mutate(Height = recode(Height_cat,
+                         "Low" = 1,
+                         "Low-medium" = 2,
+                         "Medium" = 3,
+                         "Medium-High" = 4,
+                         "High" = 5,
+                         "Very high" = 10))
+
+buildings_COM_ZCTA <- st_drop_geometry(buildings_with_communities_and_zctas) %>%
+  mutate(Height_cat = factor(Height_cat, levels = c("Low","Low-medium","Medium","Medium-High", "High","Very high"))) %>%
+  mutate(Height = recode(Height_cat,
+                         "Low" = "Low",
+                         "Low-medium" = "Low_medium",
+                         "Medium" = "Medium_High",
+                         "Medium-High" = "Medium_High",
+                         "High" = "Medium_High",
+                         "Very high" = "Medium_High")) %>%
+  group_by(COM_NAME, COM_TYPE, Height,ZCTA5CE10) %>%
+  summarise(total_area = sum(area)) %>%
+  pivot_wider(names_from = Height, values_from = total_area) %>%
+  mutate(Low = ifelse(is.na(Low), 0, Low),
+         `Low_medium` = ifelse(is.na(`Low_medium`), 0, `Low_medium`),
+         Medium_High = ifelse(is.na(Medium_High), 0, Medium_High))  %>%
+  mutate(Low = (Low - 312853.4)/362620.9,
+         `Low_medium` = (`Low_medium`-199157.3)/547639.2,
+         Medium_High = (`Medium_High`-65474.67)/510018.8)  %>%
+  mutate(Low_square = Low^2,
+         Low_medium_square = Low_medium^2,
+         Medium_High_square = Medium_High^2)  %>%
+  left_join(year_month, by = c("COM_NAME","COM_TYPE"),relationship = "many-to-many")  %>%
+  mutate(year_month = paste0(year,"_",month),
+         COM_CAT = paste0(COM_NAME,"_",COM_TYPE)) %>%
+  filter(COM_CAT %in% buildings_COM_energy$COM_CAT)
+
+saveRDS(buildings_COM_ZCTA, "/home/xz578/TEJM/TEJM-main/anna/data/prediction_model/data_predict.rds")
+
+predictions <- predict(model1, newdata = buildings_COM_ZCTA)
+predict_result <- cbind(buildings_COM_ZCTA,predictions = predictions) %>% 
+  select(ZCTA5CE10,year,month,predictions) %>% 
+  mutate(predictions = predictions^2) %>% 
+  group_by(ZCTA5CE10,year,month) %>% 
+  summarise(predictions = sum(predictions))

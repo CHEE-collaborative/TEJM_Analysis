@@ -1,0 +1,26 @@
+{
+    "id": "76472895",
+    "path": "~/TEJM/TEJM_Analysis/_targets.R",
+    "project_path": "_targets.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1719706835477.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "58,0",
+        "scrollLine": "51"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1719717845,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1719717845530,
+    "read_only": false,
+    "read_only_alternatives": []
+}

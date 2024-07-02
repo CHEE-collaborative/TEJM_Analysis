@@ -1,0 +1,44 @@
+source(file.path(function_path,"HICDD_process.R"))
+# source(file.path(function_path,"Energy_process.R"))
+source(file.path(function_path,"Buildings_process.R"))
+# source(file.path(function_path,"Adjusted_Dasymetric.R"))
+# source(file.path(function_path,"Demographics_data_process.R"))
+# source(file.path(function_path,"Make_Plots.R"))
+
+Generate_HICDD <- function(){
+  
+  data_path <- here("Data")
+  NY_BBOX <- c(46,-80,40,-71)
+  census_data <- GetCensusData("zcta")
+  DownloadDaymetData(2016:2020, NY_BBOX)
+  HICDD <- calculateHICDD(2016:2020, census_data =  census_data)
+  saveRDS(HICDD, file.path(data_path, "HICDD.rds"))
+  return(HICDD)
+  
+}
+
+Process_Buildings <- function(){
+  merged_raster <- Merge_raster()
+  buildings <- Building_filter(merged_raster)
+  
+  return(buildings)
+}
+
+Generate_Energy <- function(Buildings){
+  
+  data_path <- here("Data")
+  energy_zcta <- Energy_download_zcta()
+  saveRDS(energy_zcta, file.path(data_path, "energy", "energy_zcta.rds"))
+  energy_community <-Energy_download_community()
+  saveRDS(energy_community, file.path(data_path, "energy", "energy_community.rds"))
+
+  Building_Energy()
+  MSE <- Adjusted_Dasymetric()
+  
+  print(paste0("The MSE of Dasymetric Imputation is ", MSE,"."))
+  
+  return(MSE)
+}
+
+
+

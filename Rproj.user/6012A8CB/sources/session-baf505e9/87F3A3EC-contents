@@ -1,0 +1,102 @@
+# reassign community_energy_data variable in case it has been overwritten
+community_energy_data = c_joined
+
+saveRDS(community_energy_data, "/home/xz578/TEJM/Test/community_energy_data.rds")
+
+# Define the months and years to process
+months_to_process <- c(5)
+years_to_process <- c(2017)
+
+# Initialize a list to store the results for each month and year
+all_comparison_data_test <- list()
+
+# Loop through each month and year
+# print statement to let you know which date the code is currently processing
+cat("Processing Month:", selected_month, "Year:", selected_year, "\n")
+
+# Filter community_energy_data for the selected month and year
+community_energy_data_month_year_test <- community_energy_data %>%
+  filter(month == selected_month, year == selected_year)
+
+# Convert energy data to centroids
+centroids_test = st_centroid(community_energy_data_month_year_test)
+
+#centroids_to_join = centroids %>%
+#  select(-NAME)
+
+# Find which community each energy centroid falls in (reapportioning data to communities shapefile we have)
+community_energy_data_month_year_test <- st_join(centroids_test, uer_communities, join = st_within)
+
+# Summing all the energy values within each community
+aggregated_data_test <- community_energy_data_month_year_test %>%
+  mutate(COM_NAME = com_name) %>%
+  group_by(COM_NAME) %>%
+  summarize(total_energy_value = sum(as.numeric(value)),
+            total_number_of_accounts = sum(as.numeric(number_of_accounts)))
+
+# Add the area of the buildings for each community as a column in the dataset
+result_test <- merge(aggregated_data_test, community_area, by = "COM_NAME", all.x = TRUE)
+
+################################################################################    
+result_test[result_test$ZCTA5CE10 == "11692",]
+
+################################################################################
+
+# Calculate the energy used per square meter for each building in the county
+result_test$energy_per_sqm <- result_test$total_energy_value / result_test$building_per_community_area
+
+# Add energy per square meter to the buildings dataset for each building, according to which community each building is in
+test_test <- left_join(buildings_with_communities_and_zctas, st_drop_geometry(result_test), by = "COM_NAME")
+
+# Multiply energy_per_square_meter by the area of the buildings to get energy per building
+test_test$energy_per_building <- test_test$area * test_test$energy_per_sqm
+
+################################################################################
+
+
+# long island ZCTAs are "11692", "11693", "11694", and "11697"
+# they all of "New York" in the NAME column
+
+any_non_na <- any(!is.na(test_test[test_test$ZCTA5CE10 == "11694", "energy_per_building"]))
+any_non_na
+
+non_na_rows <- subset(test_test, ZCTA5CE10 == "11694" & !is.na(energy_per_building))
+print(non_na_rows)
+
+################################################################################
+test2_test <- test_test %>% st_drop_geometry()
+# Replace any building that returns NA for energy value with the average energy value per building of that Community (this takes 30 minutes per run)
+avg_known_energy_by_zcta_test <- test2_test %>%
+  group_by(COM_NAME) %>%
+  summarize(average = mean(energy_per_building, na.rm = TRUE))
+
+test2_test[is.na(test2_test$energy_per_building),]$energy_per_building = test2_test[is.na(test2_test$energy_per_building),]$average.y
+
+
+# Aggregate up to the ZCTA level, adding together energy per building
+energy_per_zcta_dasy_test <- test2_test %>%
+  group_by(ZCTA5CE10) %>%
+  summarize(total_energy_times_area = sum(energy_per_building)) 
+
+energy_per_zcta_dasy_test[energy_per_zcta_dasy_test$ZCTA5CE10 == "11692",]
+
+
+# Joining dasy data to ZCTAs for plotting
+energy_per_zcta_dasy_zctas_test <- left_join(zctas, st_drop_geometry(energy_per_zcta_dasy_test), by = "ZCTA5CE10")
+energy_per_zcta_dasy_zctas_test_table <- st_drop_geometry(energy_per_zcta_dasy_zctas_test)
+# Construct the result name
+result_name <- paste0("Month", selected_month, "_Year", selected_year,"_test")
+
+all_comparison_data[[result_name]] <- energy_per_zcta_dasy_zctas
+
+# Get the data for the current month and year
+energy_per_zcta_current_date <- all_comparison_data[[result_name]]
+
+# Define the output file path
+output_file <- file.path(here(DATA_DATADIR, "energy_data", paste0(result_name, ".geojson")))
+
+
+# Save the data to GeoJSON file
+st_write(energy_per_zcta_current_date, output_file, driver = "GeoJSON")
+
+cat("Saved result for Month:", selected_month, "Year:", selected_year, "to", output_file, "\n")

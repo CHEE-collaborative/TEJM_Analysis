@@ -1,0 +1,76 @@
+census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+
+get_acs_decennial <- function(geography,geometry = FALSE){
+  acs_year <- get_decennial(
+    geography = geography,
+    variables = c("Total_pop" = "P001001",
+                  "White" = "P005003",
+                  "Black" = "P005004",
+                  "Asian" = "P005006",
+                  "Hispanic" = "P005010",
+                  "Households" = "H003001"),
+    year = 2010,
+    output = "wide",
+    geometry = geometry,
+    state = 36
+  ) %>%
+    #st_transform(crs = st_crs(4326)) %>%
+    # filter(!st_is_empty(.)) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households)
+  return(acs_year)
+}
+
+get_acs_5year <- function(geography,year){
+  acs_year <- get_acs(
+    geography = geography,
+    variables = c("Median_Income_Household" = "B19013_001E",
+                  "Total_pop" = "B01001_001E",
+                  "White" = "B03002_003E",
+                  "Black" = "B03002_004E",
+                  "Asian" = "B03002_006E",
+                  "Hispanic" = "B03001_003E",
+                  "Households" = "B11001_001E",
+                  "Avg_Household_Size" = "B25010_001E",
+                  "Household_Income_All" = "B19001_001E",
+                  "Household_Income_All_low1" = "B19001_002E",
+                  "Household_Income_All_low2" = "B19001_003E",
+                  "Household_Income_All_low3" = "B19001_004E",
+                  "Household_Income_All_high1" = "B19001_014E",
+                  "Household_Income_All_high2" = "B19001_015E",
+                  "Household_Income_All_high3" = "B19001_016E",
+                  "Household_Income_All_high4" = "B19001_017E",
+                  "Household_Income_White" = "B19001H_001E",
+                  "Household_Income_White_high1" = "B19001H_014E",
+                  "Household_Income_White_high2" = "B19001H_015E",
+                  "Household_Income_White_high3" = "B19001H_016E",
+                  "Household_Income_White_high4" = "B19001H_017E",
+                  "Household_Income_Black" = "B19001B_001E",
+                  "Household_Income_Black_low1" = "B19001B_002E",
+                  "Household_Income_Black_low2" = "B19001B_003E",
+                  "Household_Income_Black_low3" = "B19001B_004E",
+                  "Household_Income_Hispanic" = "B19001I_001E",
+                  "Household_Income_Hispanic_low1" = "B19001I_002E",
+                  "Household_Income_Hispanic_low2" = "B19001I_003E",
+                  "Household_Income_Hispanic_low3" = "B19001I_004E",
+                  "Household_Income_Asian" = "B19001D_001E",
+                  "Household_Income_Asian_low1" = "B19001D_002E",
+                  "Household_Income_Asian_low2" = "B19001D_003E",
+                  "Household_Income_Asian_low3" = "B19001D_004E"
+    ),
+    year = year,
+    survey = "acs5",
+    output = "wide",
+    geometry = FALSE,
+    state = 36
+  ) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households,
+           All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+           All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+           White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+           Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+           Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+           Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3)
+  return(acs_year)
+}

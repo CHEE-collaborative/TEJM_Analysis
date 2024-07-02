@@ -1,0 +1,67 @@
+library(targets)
+library(tarchetypes)
+library(here)
+# source functions used in analysis
+function_path <- here("Functions")
+data_path <- here("Data")
+source("Functions.R")
+
+options(tigris_use_cache = TRUE)
+
+
+tar_option_set(
+  packages = c(
+    "lme4",
+    "tidyverse",
+    "tidycensus",
+    "tigris",
+    "terra",
+    "here",
+    "sf",
+    "daymetr",
+    "ncdf4",
+    "raster",
+    "readxl",
+    "rnaturalearth",
+    "geodata",
+    "exactextractr",
+    "dplyr",
+    "purrr",
+    "zoo"
+  ),
+  format = 'rds', 
+  workspace_on_error = TRUE
+)
+
+
+list(
+  
+  # Data Load
+  tar_target(HICDD, {
+    Generate_HICDD()
+  }),
+  tar_target(Buildings, {
+    Process_Buildings()
+  }),
+  tar_target(Energy_zcta, {
+    Energy_download_zcta()
+  }),
+  tar_target(Energy_community, {
+    Energy_download_community()
+  }),
+  tar_target(Buildings_processed, {
+    Building_merge(Buildings)
+  }),
+  tar_target(Processed_Energy, {
+    Process_Energy(Buildings_processed, Energy_zcta, Energy_community)
+  }),
+  tar_target(Merged_Data, {
+    Demographics_Merge(Processed_Energy, HICDD)
+  }),
+  tar_target(Models_and_Plots, {
+    Analysis(Merged_Data,Energy_community)
+  })
+  
+)
+
+

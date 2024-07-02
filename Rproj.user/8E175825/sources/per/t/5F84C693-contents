@@ -1,0 +1,207 @@
+---
+title: "TEJM Analysis"
+author: "Xuezhixing Zhang, Anna Stouffer"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+link-citations: yes
+vignette: >
+  %\VignetteIndexEntry{Introductory-to-Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+```{r setup, include = FALSE}
+#Run these codes will take XX hours, using at least 16 GB space.
+#Codes were run with 
+library(here)
+options(tigris_use_cache = TRUE)
+function_path <- here("Functions")
+result_path <- here("Results")
+data_path <- here("Data")
+NY_BBOX <- c(46,-80,40,-71) #New York state
+source(file.path(function_path,"HICDD_process.R"))
+source(file.path(function_path,"Energy_process.R"))
+source(file.path(function_path,"Buildings_process.R"))
+source(file.path(function_path,"Adjusted_Dasymetric.R"))
+source(file.path(function_path,"Demographics_data_process.R"))
+source(file.path(function_path,"Make_Plots.R"))
+```
+
+<body style="background-color:#FBFBFB;">
+
+```{=html}
+<style type="text/css">
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
+    background-color: #D9230F;
+}
+  
+</style>
+```
+## **1: Download Data**
+
+### Download vp and tmax data for HICDD
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+census_data <- GetCensusData("zcta")
+DownloadDaymetData(2016:2020, NY_BBOX)
+
+```
+
+### Download energy data
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+### Download ZCTA level energy data
+energy_zcta <- Energy_download_zcta()
+saveRDS(energy_zcta, file.path(data_path, "energy", "energy_zcta.rds"))
+
+### Download community level energy data
+energy_community <-Energy_download_community()
+saveRDS(energy_community, file.path(data_path, "energy", "energy_community.rds"))
+
+### Download community shapefiles from UER
+# - We download NY_Community_Census_2018.dbf as shapefiles for UER communities
+```
+
+### Download building related data
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+### Download building data
+
+# - Microsoft Buildings Dataset. This can be downloaded using the following link.
+#   Scroll down to list of states and download the file for the state of interest
+#   https://github.com/microsoft/USBuildingFootprints
+
+# - Gridded population of the world (GPW) .zip files for 2000, 2005, 2010, 2015,
+#   and 2020. These an be downloaded from this website 
+#   https://sedac.ciesin.columbia.edu/data/set/gpw-v4-population-count-rev11/data-download
+
+# - Block Group Level Height Dataset (USGS heights data). This can be downloaded using the following link.
+#   https://www.sciencebase.gov/catalog/item/5775469ce4b07dd077c7088a
+
+# These files should be downloaded in the directory "data/building"
+# File names are shown in the figure.
+# NewYork.geojson denotes the building dataset for NY state
+# gpw_v4_population_density_rev11_XXXX_30_sec.tif denotes the population dataset
+# srtm_bg_building_heights.gdb denotes the height category dataset
+
+```
+
+![Names of building datasets](Data/building/data_example.png)
+
+
+### Download Demographics data
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+### Download ACS data and 2010 decennial data
+
+
+```
+
+## **2: Data Process**
+
+### Calculate HICDD
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+
+HICDD <- calculateHICDD(2016:2020)
+saveRDS(HICDD, file.path(data_path, "HICDD.rds"))
+
+```
+
+### Clean building related datasets
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+#Interpolate and save GPW data
+GPW_process()
+
+#Filter buildings without any people (This takes five minutes)
+Building_filter()
+
+# Create mapping of buildings, zctas and communities (This takes about 10 hours)
+Building_Energy() # This generates a file about 3GB.
+
+```
+
+### Impute energy data with adjusted dasymetric method
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# Perform Adjusted Dasymetric imputation ()
+#MSE indicates MSE values across all combinations of height scores.
+#The imputed energy data will be saved as final_energy_data.rds, which can be found at /Data
+MSE <- Adjusted_Dasymetric()
+
+print(MSE)
+```
+
+### Merge datasets
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+median_income <- get_income()
+monthly_data <- Merge_Datasets(median_income)
+
+```
+
+## **3: Models**
+
+### Quantile regressions for HICDD and income groups
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+Model_ICE(monthly_data)
+```
+
+### Quantile regressions for HICDD and ICE measures
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+Model_ICE(monthly_data)
+```
+
+### Sensitivity analysis
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+Model_sensitivity(monthly_data)
+```
+
+
+## **4: Plots**
+
+### Figure 1: Average energy use per month by income groups through 2016 to 2020
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+figure1 <- Figure1(monthly_data)
+figure1
+```
+
+### Figure 2: Estimated energy increase per HICDD unit at different quantiles
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+figure2 <- Figure2()
+figure2
+```
+
+### Figure 3: Estimated energy increase per HICDD unit for privileged groups at different quantiles
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+figure3 <- Figure3()
+figure3
+
+```
+
+### Suppl Figure 2: Heat map for estimated energy increase per HICDD unit at different quantiles
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+figure_Suppl <- Figure_Suppl()
+figure_Suppl
+
+```
+
+## **5: Renv**
+
+

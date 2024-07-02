@@ -1,0 +1,467 @@
+library(splines)
+library(mgcv)
+library(lqmm)
+library(tidyverse)
+
+
+# data_table_2_old <- readRDS("/home/xz578/TEJM/LQMM3/data_table_2.rds")
+# combines <- paste0(data_table_2_old$GEOID,data_table_2_old$year,data_table_2_old$month)
+
+# zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+# data_table_2 <- data_table_2 %>%
+#   left_join(zcta_county_match, by = "GEOID") %>%
+#   left_join(new_energy, by = c("GEOID","year","month")) %>%
+#   mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+#   mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+#   mutate(Normalized_Energy = Total_Energy/Households) %>%
+#   mutate(New_Normalized_Energy = New_Total_Energy/Households)
+
+# test <- data_table_2 %>% filter(!(paste0(GEOID,year,month) %in% combines))
+
+data_table_2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_2.rds")%>%
+  # rename(total_accounts = number_of_accounts) %>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_2 <- data_table_2 %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    Total_Energy/Households,
+                                    Total_Energy/total_accounts
+  )) %>%
+  filter(!is.na(Normalized_Energy))
+
+taus <- c(0.1, 0.5, 0.9)
+
+for(tau in taus){
+  print(tau)
+  # print("Black")
+  #ICE_Black:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            # Total_pop_scaled+
+                            # Households_scaled+
+                            # county_fips +
+                            # Avg_Household_Size*Households_scaled +
+                            # ICE_income_Black*Households_scaled +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Black_1_",tau,".rds"))
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Black_",tau,".rds"))
+  print("Hispanic")
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            # Total_pop_scaled+
+                            # Households_scaled+
+                            # county_fips +
+                            # Avg_Household_Size*Households_scaled +
+                            # ICE_income_Hispanic*Households_scaled +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Hispanic_1_",tau,".rds"))
+  
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Hispanic_",tau,".rds"))
+  
+  #ICE_Asian:
+  print("Asian")
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            # Total_pop_scaled+ 
+                            # Households_scaled+
+                            # county_fips +
+                            # Avg_Household_Size*Households_scaled +
+                            # ICE_income_Asian*Households_scaled +
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Asian_1_",tau,".rds"))
+  
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_ICE_income_Asian_",tau,".rds"))
+
+  #ICE_Black:
+  qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            # Total_pop_scaled+
+                            Households_scaled+
+                            # county_fips +
+                            Avg_Household_Size*Households_scaled +
+                            # ICE_income_Black*Households_scaled +
+                            ICE_income_Black +
+                            HICDD*ICE_income_Black,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Black_1_",tau,".rds"))
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Black_",tau,".rds"))
+  print("Hispanic")
+  
+  #ICE_Hispanic:
+  qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD +
+                            Avg_Household_Size +
+                            # Total_pop_scaled+
+                            Households_scaled+
+                            # county_fips +
+                            Avg_Household_Size*Households_scaled +
+                            # ICE_income_Hispanic*Households_scaled +
+                            ICE_income_Hispanic +
+                            HICDD*ICE_income_Hispanic,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df",
+                                                UP_max_iter = 3000,
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Hispanic_1_",tau,".rds"))
+  
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Hispanic_",tau,".rds"))
+  
+  #ICE_Asian:
+  print("Asian")
+  qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+                            Avg_Household_Size + 
+                            # Total_pop_scaled+ 
+                            Households_scaled+
+                            # county_fips +
+                            Avg_Household_Size*Households_scaled +
+                            # ICE_income_Asian*Households_scaled +
+                            ICE_income_Asian + 
+                            HICDD*ICE_income_Asian,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_2,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 3000, 
+                                                LP_max_iter = 500,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Asian_1_",tau,".rds"))
+  
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_ICE_income_Asian_",tau,".rds"))
+  
+  }
+
+# 
+# 
+# # qm.effect_HICDD <- lqmm(fixed = ICE_Black ~ 
+# #                           Avg_Household_Size,
+# #                         random =  ~ 1,
+# #                         group= factor(groups_county),
+# #                         data = data_table_2,
+# #                         tau = 0.5,
+# #                         control = lqmmControl(method = "df",
+# #                                               UP_max_iter = 3000,
+# #                                               LP_max_iter = 500,
+# #                                               UP_tol = 1e-4,
+# #                                               LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+# # summary(qm.effect_HICDD)
+# # lm(Households_scaled~ICE_income_Hispanic, data = data_table_2)
+# # summary(lm(Households_scaled~ICE_income_Hispanic, data = data_table_2))
+# # summary(lm(Households_scaled~ICE_income_Asian, data = data_table_2))
+# # summary(lm(Households_scaled~ICE_income_Black, data = data_table_2))
+# 
+# for(tau in taus){
+#   print(tau)
+#   # print("Black")
+#   #ICE_Black:
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD +
+#                             Avg_Household_Size +
+#                             # Total_pop_scaled+
+#                             Households_scaled+
+#                             # county_fips +
+#                             Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Black*Households_scaled +
+#                             ICE_income_Black +
+#                             HICDD*ICE_income_Black,
+#                           random =  ~ 1,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df",
+#                                                 UP_max_iter = 3000,
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+# 
+# 
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Black_1_",tau,".rds"))
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Black_1_",tau,".rds"))
+#   print("Hispanic")
+# 
+#   #ICE_Hispanic:
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD +
+#                             Avg_Household_Size +
+#                             # Total_pop_scaled+
+#                             Households_scaled+
+#                             # county_fips +
+#                             Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Hispanic*Households_scaled +
+#                             ICE_income_Hispanic +
+#                             HICDD*ICE_income_Hispanic,
+#                           random =  ~ 1,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df",
+#                                                 UP_max_iter = 3000,
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+# 
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Hispanic_1_",tau,".rds"))
+# 
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Hispanic_1_",tau,".rds"))
+#   
+#   #ICE_Asian:
+#   print("Asian")
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD + 
+#                             Avg_Household_Size + 
+#                             # Total_pop_scaled+ 
+#                             Households_scaled+
+#                             # county_fips +
+#                             Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Asian*Households_scaled +
+#                             ICE_income_Asian + 
+#                             HICDD*ICE_income_Asian,
+#                           random =  ~ 1,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df", 
+#                                                 UP_max_iter = 3000, 
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Asian_1_",tau,".rds"))
+#   
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Asian_1_",tau,".rds"))
+# }
+# 
+# ##########################################################################################################
+# ##########################################################################################################
+# for(tau in taus){
+#   print(tau)
+#   # print("Black")
+#   #ICE_Black:
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD +
+#                             # Avg_Household_Size +
+#                             # Total_pop_scaled+
+#                             Households_scaled+
+#                             # county_fips +
+#                             # Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Black*Households_scaled +
+#                             ICE_income_Black +
+#                             HICDD*ICE_income_Black,
+#                           random =  ~ 1,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df",
+#                                                 UP_max_iter = 3000,
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Black_2_",tau,".rds"))
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Black_2_",tau,".rds"))
+#   print("Hispanic")
+#   
+#   #ICE_Hispanic:
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD +
+#                             # Avg_Household_Size +
+#                             # Total_pop_scaled+
+#                             Households_scaled+
+#                             # county_fips +
+#                             # Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Hispanic*Households_scaled +
+#                             ICE_income_Hispanic +
+#                             HICDD*ICE_income_Hispanic,
+#                           random =  ~ 1,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df",
+#                                                 UP_max_iter = 3000,
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Hispanic_2_",tau,".rds"))
+#   
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Hispanic_2_",tau,".rds"))
+#   
+#   #ICE_Asian:
+#   print("Asian")
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD + 
+#                             # Avg_Household_Size + 
+#                             # Total_pop_scaled+ 
+#                             Households_scaled+
+#                             # county_fips +
+#                             # Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Asian*Households_scaled +
+#                             ICE_income_Asian + 
+#                             HICDD*ICE_income_Asian,
+#                           random =  ~ 1,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df", 
+#                                                 UP_max_iter = 3000, 
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Asian_2_",tau,".rds"))
+#   
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Asian_2_",tau,".rds"))
+# }
+# 
+# ##########################################################################################################
+# ##########################################################################################################
+# for(tau in taus){
+#   print(tau)
+#   # print("Black")
+#   #ICE_Black:
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD +
+#                             # Avg_Household_Size +
+#                             # Total_pop_scaled+
+#                             Households_scaled+
+#                             # county_fips +
+#                             # Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Black*Households_scaled +
+#                             ICE_income_Black +
+#                             HICDD*ICE_income_Black,
+#                           random =  ~ 1+Households_scaled,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df",
+#                                                 UP_max_iter = 3000,
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Black_3_",tau,".rds"))
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Black_3_",tau,".rds"))
+#   print("Hispanic")
+#   
+#   #ICE_Hispanic:
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD +
+#                             # Avg_Household_Size +
+#                             # Total_pop_scaled+
+#                             Households_scaled+
+#                             # county_fips +
+#                             # Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Hispanic*Households_scaled +
+#                             ICE_income_Hispanic +
+#                             HICDD*ICE_income_Hispanic,
+#                           random =  ~ 1 + Households_scaled,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df",
+#                                                 UP_max_iter = 3000,
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Hispanic_3_",tau,".rds"))
+#   
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Hispanic_3_",tau,".rds"))
+#   
+#   #ICE_Asian:
+#   print("Asian")
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD + 
+#                             # Avg_Household_Size + 
+#                             # Total_pop_scaled+ 
+#                             Households_scaled+
+#                             # county_fips +
+#                             # Avg_Household_Size*Households_scaled +
+#                             # ICE_income_Asian*Households_scaled +
+#                             ICE_income_Asian + 
+#                             HICDD*ICE_income_Asian,
+#                           random =  ~ 1 + Households_scaled,
+#                           group= factor(county_fips),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df", 
+#                                                 UP_max_iter = 3000, 
+#                                                 LP_max_iter = 500,
+#                                                 UP_tol = 1e-4,
+#                                                 LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+#   
+#   # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_pop_HICDD_ICE_income_Asian_3_",tau,".rds"))
+#   
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_ICE_income_Asian_3_",tau,".rds"))
+# }

@@ -1,0 +1,47 @@
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(tidycensus)
+library(tigris)
+options(tigris_use_cache = TRUE)
+
+
+data_table_2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_2.rds")%>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, 1, total_accounts))
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_2 <- data_table_2 %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    Total_Energy/Households,
+                                    Total_Energy/total_accounts
+  ))
+
+## Obtain zcta shapefiles
+zctas <- zctas(year = 2010,state = "NY") %>%
+  rename(GEOID = ZCTA5CE10) %>%
+  select(GEOID)
+
+## Data with 0 True Energy
+data_zero <- data_table_2 %>% filter(True_Energy == 0)
+data_with_zero_areas <- data_table_2 %>% filter(GEOID %in% unique(data_zero$GEOID))
+
+#13488: Small energy in some months
+#13450: Small energy in some months
+#13345: Small energy in some months
+#12855: Small energy in most months
+#11385: Missingness counted as NA
+#Conclusion: It's highly possible that some missing values are simply counted as 0.
+
+zctas <- zctas %>% mutate(ifzero = ifelse(GEOID %in% data_zero$GEOID, "1", "0"))
+plot(zctas[,3])
+
+
+
+

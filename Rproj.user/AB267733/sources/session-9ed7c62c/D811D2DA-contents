@@ -1,0 +1,532 @@
+library(lqmm)
+library(tidyverse)
+library(sf)
+library(tidycensus)
+library(sjPlot)
+library(here)
+library(zoo)
+
+#api key for census tract data
+census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+# census_api_key("f784a2cebec7fc7920cbff34e977135f92d400aa", install = TRUE, overwrite = TRUE)
+#f784a2cebec7fc7920cbff34e977135f92d400aa
+# energy_file <- here("Desktop//Yale//Project//EHS//23.10.8//Energy_Data")
+GEOGRAPHIC_RESOLUTION = "zcta"
+
+get_acs_decennial <- function(geography,geometry = FALSE){
+  acs_year <- get_decennial(
+    geography = geography,
+    variables = c("Total_pop" = "P001001",
+                  "White" = "P005003",
+                  "Black" = "P005004",
+                  "Asian" = "P005006",
+                  "Hispanic" = "P005010",
+                  "Households" = "H003001"),
+    year = 2010,
+    output = "wide",
+    geometry = geometry,
+    state = 36
+  ) %>%
+    #st_transform(crs = st_crs(4326)) %>%
+    # filter(!st_is_empty(.)) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households)
+  return(acs_year)
+}
+
+get_acs_5year <- function(geography,year){
+  acs_year <- get_acs(
+    geography = geography,
+    variables = c("Median_Income_Household" = "B19013_001E",
+                  "Total_pop" = "B01001_001E",
+                  "White" = "B03002_003E",
+                  "Black" = "B03002_004E",
+                  "Asian" = "B03002_006E",
+                  "Hispanic" = "B03001_003E",
+                  "Households" = "B11001_001E",
+                  "Avg_Household_Size" = "B25010_001E",
+                  "Household_Income_All" = "B19001_001E",
+                  "Household_Income_All_low1" = "B19001_002E",
+                  "Household_Income_All_low2" = "B19001_003E",
+                  "Household_Income_All_low3" = "B19001_004E",
+                  "Household_Income_All_high1" = "B19001_014E",
+                  "Household_Income_All_high2" = "B19001_015E",
+                  "Household_Income_All_high3" = "B19001_016E",
+                  "Household_Income_All_high4" = "B19001_017E",
+                  "Household_Income_White" = "B19001H_001E",
+                  "Household_Income_White_high1" = "B19001H_014E",
+                  "Household_Income_White_high2" = "B19001H_015E",
+                  "Household_Income_White_high3" = "B19001H_016E",
+                  "Household_Income_White_high4" = "B19001H_017E",
+                  "Household_Income_Black" = "B19001B_001E",
+                  "Household_Income_Black_low1" = "B19001B_002E",
+                  "Household_Income_Black_low2" = "B19001B_003E",
+                  "Household_Income_Black_low3" = "B19001B_004E",
+                  "Household_Income_Hispanic" = "B19001I_001E",
+                  "Household_Income_Hispanic_low1" = "B19001I_002E",
+                  "Household_Income_Hispanic_low2" = "B19001I_003E",
+                  "Household_Income_Hispanic_low3" = "B19001I_004E",
+                  "Household_Income_Asian" = "B19001D_001E",
+                  "Household_Income_Asian_low1" = "B19001D_002E",
+                  "Household_Income_Asian_low2" = "B19001D_003E",
+                  "Household_Income_Asian_low3" = "B19001D_004E"
+    ),
+    year = year,
+    survey = "acs5",
+    output = "wide",
+    geometry = FALSE,
+    state = 36
+  ) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households,
+           All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+           All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+           White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+           Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+           Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+           Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3)
+  #st_transform(crs = st_crs(4326)) %>%
+  #filter(!st_is_empty(.))
+  return(acs_year)
+}
+
+## Read Energy data
+monthly_data <- readRDS("/home/xz578/TEJM/TEJM-main/anna/data/Dasy_Test/energy_data_new_building.rds") %>%
+  mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+# monthly_data <- readRDS("energy_data_imputed.rds") %>% 
+#   mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+## Get yearly median income data from 2016 to 2020:
+median_income_yearly <- NULL
+for(year_num in 2016:2019){
+  acs_data_yearly <- get_acs_5year(GEOGRAPHIC_RESOLUTION,year_num) %>%
+    mutate(year = year_num) %>%
+    dplyr::select(GEOID,Median_Income_Household, 
+           Total_pop,White, Black, Asian, Hispanic, Other,
+           Households,Size_per_House,Avg_Household_Size,
+           year,
+           Household_Income_All,
+           All_household_income_low,All_household_income_high,
+           Hispanic_household_income_low, Asian_household_income_low)
+  median_income_yearly <- rbind(median_income_yearly,acs_data_yearly)
+}
+
+## Median Income of ACS5/ACS1 for NY in 2020 cannot be directly extracted.
+acs_data_2020 <- get_acs(
+  geography = GEOGRAPHIC_RESOLUTION,
+  variables = c("Median_Income_Household" = "B19013_001E",
+                "Total_pop" = "B01001_001E",
+                "White" = "B03002_003E",
+                "Black" = "B03002_004E",
+                "Asian" = "B03002_006E",
+                "Hispanic" = "B03001_003E",
+                "Households" = "B11001_001E",
+                "Avg_Household_Size" = "B25010_001E",
+                "Household_Income_All" = "B19001_001E",
+                "Household_Income_All_low1" = "B19001_002E",
+                "Household_Income_All_low2" = "B19001_003E",
+                "Household_Income_All_low3" = "B19001_004E",
+                "Household_Income_All_high1" = "B19001_014E",
+                "Household_Income_All_high2" = "B19001_015E",
+                "Household_Income_All_high3" = "B19001_016E",
+                "Household_Income_All_high4" = "B19001_017E",
+                "Household_Income_White" = "B19001H_001E",
+                "Household_Income_White_high1" = "B19001H_014E",
+                "Household_Income_White_high2" = "B19001H_015E",
+                "Household_Income_White_high3" = "B19001H_016E",
+                "Household_Income_White_high4" = "B19001H_017E",
+                "Household_Income_Black" = "B19001B_001E",
+                "Household_Income_Black_low1" = "B19001B_002E",
+                "Household_Income_Black_low2" = "B19001B_003E",
+                "Household_Income_Black_low3" = "B19001B_004E",
+                "Household_Income_Hispanic" = "B19001I_001E",
+                "Household_Income_Hispanic_low1" = "B19001I_002E",
+                "Household_Income_Hispanic_low2" = "B19001I_003E",
+                "Household_Income_Hispanic_low3" = "B19001I_004E",
+                "Household_Income_Asian" = "B19001D_001E",
+                "Household_Income_Asian_low1" = "B19001D_002E",
+                "Household_Income_Asian_low2" = "B19001D_003E",
+                "Household_Income_Asian_low3" = "B19001D_004E"),
+  year = 2020,
+  survey = "acs5",
+  output = "wide",
+  geometry = FALSE) %>%
+  filter(GEOID %in% median_income_yearly$GEOID) %>%
+  mutate(year = 2020) %>%
+  mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+         Size_per_House = Total_pop/Households,
+         All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+         All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+         White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+         Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+         Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+         Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3) %>%
+  dplyr::select(GEOID,Median_Income_Household, 
+         Total_pop,White, Black, Asian, Hispanic, Other,
+         Households,Size_per_House,Avg_Household_Size,
+         year,
+         Household_Income_All,
+         All_household_income_low,All_household_income_high,
+         White_household_income_high, Black_household_income_low,
+         Hispanic_household_income_low, Asian_household_income_low)
+
+
+median_income_yearly <- rbind(median_income_yearly,acs_data_2020)
+
+## Linear Interpolation for median income data
+median_income_yearly <- median_income_yearly %>%
+  group_by(GEOID) %>%
+  arrange(year) %>%
+  mutate(Imputed = 
+           ifelse(rep(all(is.na(Median_Income_Household)),length(year)), NA,
+                  na.approx(Median_Income_Household, year,rule = 2))) %>%
+  ungroup() %>%
+  mutate(Scaled_Income = as.numeric(scale(Imputed)))
+
+
+## Load LSTCDD data
+# LSTCDD_monthly <- readRDS("lscdd_per_month.rds") %>%
+#   st_drop_geometry(.) %>%
+#   pivot_longer(cols = starts_with("20"),
+#                names_to = "date",
+#                values_to = "LSTCDD") %>%
+#   mutate(year = as.numeric(substr(date,1,4)),
+#          month = as.numeric(substr(date,6,6)),
+#          GEOID = substr(GEOID, 3,7),
+#          LSTCDD_scaled = as.numeric(scale(LSTCDD))) %>%
+#   dplyr::select(GEOID, year, month, LSTCDD, LSTCDD_scaled)
+
+HICDD_monthly <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/hicdds_per_year_month_zcta.rds") %>%
+  mutate(GEOID = substr(GEOID,3,7),
+         HICDD = mean) %>%
+  dplyr::select(GEOID, year, month, HICDD) %>%
+  mutate(HICDD_scaled = as.numeric(scale(HICDD)))
+
+## Merge datasets
+# shape <- st_read(file.path(energy_file,"Month5_Year2016.geojson")) %>%
+#   mutate(GEOID = ZCTA5CE10) %>%
+#   dplyr::select(GEOID, geometry)
+
+monthly_data <- monthly_data %>%
+  left_join(HICDD_monthly, by = c("GEOID","year","month")) %>%
+  left_join(median_income_yearly, by = c("GEOID", "year")) %>%
+  mutate(White_prop = White/Total_pop,
+         Black_prop = Black/Total_pop,
+         Asian_prop = Asian/Total_pop,
+         Hispanic_prop = Hispanic/Total_pop) 
+
+
+## Run linear quantile mixed effects regression
+monthly_data <- monthly_data %>%
+  mutate(groups = paste0(year,"_",month)) %>%
+  mutate(Total_pop_scaled = as.numeric(scale(Total_pop))) %>%
+  mutate(Households_scaled = as.numeric(scale(Households))) %>%
+  mutate(True_Energy_normalized = ifelse(is.na(True_Energy),NA,True_Energy/Households)) %>%
+  mutate(Total_Energy_normalized = ifelse(is.na(Total_Energy),NA,Total_Energy/Households)) #Normalized by number of households
+
+# saveRDS(monthly_data, "monthly_data_imputed.rds")
+
+data_table <- monthly_data %>% 
+  # dplyr::select(-geometry,-total_accounts) %>% 
+  filter(!is.na(Total_Energy),!is.na(Avg_Household_Size),!is.na(Scaled_Income),!is.na(Households_scaled))
+
+
+
+# data_table_2 <- monthly_data %>% 
+#   # dplyr::select(-geometry,-total_accounts) %>% 
+#   filter(!is.infinite(True_Energy_normalized), !is.nan(True_Energy_normalized), !is.na(True_Energy))
+
+# qm.effect_LSTCDD <- lqmm(fixed = Total_Energy ~ LSTCDD + 
+#                            Scaled_Income + Avg_Household_Size + 
+#                            Households_scaled+
+#                            LSTCDD_Scaled_Income,
+#                   random =  ~ 1,
+#                   group= factor(groups),
+#                   data = data_table,
+#                   tau = 0.5,
+#                   control = lqmmControl(method = "df", UP_max_iter = 2000))
+# qm.effect_LSTCDD
+# AIC_LSTCDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_LSTCDD$logLik
+# summary_LSTCDD <- summary(qm.effect_LSTCDD)
+# 
+# saveRDS(qm.effect_LSTCDD,"lqmm_model_LSTCDD.rds")
+# saveRDS(summary_LSTCDD, "model_summary_LSTCDD.rds")
+
+# Make Predictions
+# predictdata <- monthly_data %>% 
+#   filter(!is.na(Avg_Household_Size),!is.na(Scaled_Income),!is.na(Households_scaled)) %>% 
+#   dplyr::select(GEOID, year, month, LSTCDD, 
+#          Avg_Household_Size, Scaled_Income, Households_scaled, groups) %>% 
+#   mutate(LSTCDD_Scaled_Income = LSTCDD*Scaled_Income) %>% 
+#   mutate(groups = factor(groups))
+# 
+# predictions <- predict(qm.effect_LSTCDD, level = 0, 
+#                        LSTCDD =predictdata$LSTCDD,
+#                        Avg_Household_Size = predictdata$Avg_Household_Size,
+#                        Scaled_Income = predictdata$Scaled_Income,
+#                        Households_scaled = predictdata$Households_scaled,
+#                        groups = predictdata$groups)
+
+
+
+
+
+
+##HICDD
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           Scaled_Income + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*Scaled_Income,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+# 
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_continuous_income.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_continuous_income.rds")
+
+# summary_HICDD
+
+
+#Median Income thresholds: 50000, 70000, 90000
+quantile(monthly_data$Median_Income_Household, probs = 1:20/20, na.rm=T)
+data_table_cat <- data_table %>%
+  mutate(Median_Income_cat = ifelse(Imputed <= 50000,
+                                    "<=50k",
+                                    ifelse(Imputed <=70000,
+                                           "50k-70k",
+                                           ifelse(Imputed <= 90000,
+                                                  "70k-90k",
+                                                  ifelse(Imputed > 90000,
+                                                         ">90k", NA))))) %>%
+  mutate(Median_Income_cat = factor(Median_Income_cat,
+                                    levels = c("<=50k","50k-70k","70k-90k",">90k")))
+
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           Median_Income_cat + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*Median_Income_cat,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table_cat,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+
+# saveRDS(data_table_cat,"data_table_cat.rds")
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_categorical_income.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_categorical_income.rds")
+# summary_HICDD
+
+#Median Income thresholds: 50000, 70000, 90000
+# quantile(monthly_data$Median_Income_Household, probs = 1:10/10, na.rm=T)
+data_table_cat_more <- data_table %>%
+  mutate(Median_Income_cat = ifelse(Imputed <= 50000,
+                                    "<=50k",
+                                    ifelse(Imputed <=60000,
+                                           "50k-60k",
+                                           ifelse(Imputed <= 70000,
+                                                  "60k-70k",
+                                                  ifelse(Imputed <= 80000,
+                                                         "70k-80k", ifelse(Imputed <= 90000,
+                                                                           "80k-90k", ifelse(Imputed <= 100000,
+                                                                                             "90k-100k", ifelse(Imputed > 100000,
+                                                                                                                ">100k", NA)))))))) %>%
+  mutate(Median_Income_cat = factor(Median_Income_cat,
+                                    levels = c("<=50k","50k-60k","60k-70k", "70k-80k","80k-90k", "90k-100k", ">100k")))
+
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           Median_Income_cat + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*Median_Income_cat,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table_cat,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+
+# saveRDS(data_table_cat_more,"data_table_cat_more.rds")
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_categorical_income_more.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_categorical_income_more.rds")
+# summary_HICDD
+
+
+#ICE_income: low household income: <20000; High income: >100000.
+#We observe similar pattern as income_scaled
+data_table_2 <- data_table %>%
+  mutate(ICE_income = (All_household_income_high - All_household_income_low)/Households) %>%
+  mutate(ICE_income_Black = (White_household_income_high - Black_household_income_low)/Households) %>%
+  mutate(ICE_income_Hispanic = (White_household_income_high - Hispanic_household_income_low)/Households) %>%
+  mutate(ICE_income_Asian = (White_household_income_high - Asian_household_income_low)/Households)
+
+# saveRDS(data_table_2, "/home/xz578/TEJM/LQMM3/New_Energy/data_table_2.rds")
+
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           ICE_income + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*ICE_income,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table_2,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+# 
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_ICE_income.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_ICE_income.rds")
+# summary_HICDD
+
+#ICE_Black:
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           ICE_income_Black + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*ICE_income_Black,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table_2,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+# 
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_ICE_income_Black.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_ICE_income_Black.rds")
+# summary_HICDD
+
+
+#ICE_Hispanic:
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           ICE_income_Hispanic + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*ICE_income_Hispanic,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table_2,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+# 
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_ICE_income_Hispanic.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_ICE_income_Hispanic.rds")
+# summary_HICDD
+
+#ICE_Asian:
+# qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           ICE_income_Asian + Avg_Household_Size + 
+#                           Households_scaled+
+#                           HICDD*ICE_income_Asian,
+#                         random =  ~ 1,
+#                         group= factor(groups),
+#                         data = data_table_2,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", UP_max_iter = 2000))
+# 
+# AIC_HICDD <- 2*4 + 2*length(unique(data_table$groups)) - 2 * qm.effect_HICDD$logLik #THIS IS SMALLER, INDICATING A BETTER MODEL
+# summary_HICDD <- summary(qm.effect_HICDD)
+# 
+# saveRDS(qm.effect_HICDD,"lqmm_model_HICDD_ICE_income_Asian.rds")
+# saveRDS(summary_HICDD, "model_summary_HICDD_ICE_income_Asian.rds")
+# summary_HICDD
+
+
+#Different quantiles for income categories
+
+# taus <- c(0.1,0.3,0.7,0.9)
+# 
+# for(tau in taus){
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                             Median_Income_cat + Avg_Household_Size + 
+#                             Households_scaled+
+#                             HICDD*Median_Income_cat,
+#                           random =  ~ 1,
+#                           group= factor(groups),
+#                           data = data_table_cat,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df", UP_max_iter = 2000))
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(qm.effect_HICDD,paste0("lqmm_model_HICDD_categorical_income_",tau,".rds"))
+#   saveRDS(summary_HICDD, paste0("model_summary_HICDD_categorical_income_",tau,".rds"))
+# }
+
+
+
+#Different quantiles for ICE_income
+# taus <- c(0.1,0.3,0.7,0.9)
+# 
+# for(tau in taus){
+#   qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                             ICE_income + Avg_Household_Size + 
+#                             Households_scaled+
+#                             HICDD*ICE_income,
+#                           random =  ~ 1,
+#                           group= factor(groups),
+#                           data = data_table_2,
+#                           tau = tau,
+#                           control = lqmmControl(method = "df", UP_max_iter = 2000))
+#   summary_HICDD <- summary(qm.effect_HICDD)
+#   saveRDS(qm.effect_HICDD,paste0("lqmm_model_HICDD_ICE_income_",tau,".rds"))
+#   saveRDS(summary_HICDD, paste0("model_summary_HICDD_ICE_income_",tau,".rds"))
+# }
+
+
+
+
+
+# 
+# ##Plots
+# draw_slopes <- function(slopes, labels){
+#   library(ggplot2)
+#   
+#   data <- expand.grid(x = seq(0, 10, by = 0.1), label = labels)
+#   data$y <- data$x * slopes[match(data$label, labels)]
+#   
+#   # Create the plot
+#   ggplot(data, aes(x = x, y = y, color = label)) +
+#     geom_line() +
+#     labs(title = "Different Slopes",
+#          x = "X",
+#          y = "Y") +
+#     scale_color_discrete(name = "Percentiles") +
+#     theme_minimal()
+# }
+# 
+# labels <- c("0%", "25%", "50%", "75%", "100%")
+# ##Calculate Slopes for LSTCDD and HICDD, conditional on income
+# quantile_income <- quantile(data_table$Scaled_Income, )
+# slopes_LSTCDD_conditional_on_income <-qm.effect_LSTCDD$theta_x[2] + qm.effect_LSTCDD$theta_x[6]*quantile_income
+# slopes_HICDD_conditional_on_income <-qm.effect_HICDD$theta_x[2] + qm.effect_HICDD$theta_x[6]*quantile_income
+# 
+# draw_slopes(slopes_LSTCDD_conditional_on_income,labels)
+# draw_slopes(slopes_HICDD_conditional_on_income,labels)
+# 
+# ##Calculate Slopes for income, conditional on LSTCDD or HICDD
+# quantile_LSTCDD <- quantile(data_table$LSTCDD)
+# quantile_HICDD <- quantile(data_table$HICDD)
+# slopes_income_conditional_on_LSTCDD <-qm.effect_LSTCDD$theta_x[3] + qm.effect_LSTCDD$theta_x[6]*quantile_LSTCDD
+# slopes_income_conditional_on_HICDD <-qm.effect_HICDD$theta_x[3] + qm.effect_HICDD$theta_x[6]*quantile_HICDD
+# 
+# draw_slopes(slopes_income_conditional_on_LSTCDD,labels)
+# draw_slopes(slopes_income_conditional_on_HICDD,labels)
+# 
+
+
+
+
+saveRDS(data_table_cat,"/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat.rds")
+saveRDS(data_table_cat_more,"/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat_more.rds")
+saveRDS(data_table_2,"/home/xz578/TEJM/LQMM3/New_Energy/data_table_2.rds")

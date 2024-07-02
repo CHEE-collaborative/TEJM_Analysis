@@ -1,0 +1,179 @@
+library(lqmm)
+library(tidyverse)
+library(sf)
+library(tidycensus)
+library(sjPlot)
+library(here)
+library(zoo)
+
+
+census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+
+
+get_acs_5year <- function(geography,year){
+  acs_year <- get_acs(
+    geography = geography,
+    variables = c("Median_Income_Household" = "B19013_001E",
+                  "Total_pop" = "B01001_001E",
+                  "White" = "B03002_003E",
+                  "Black" = "B03002_004E",
+                  "Asian" = "B03002_006E",
+                  "Hispanic" = "B03001_003E",
+                  "Households" = "B11001_001E",
+                  "Avg_Household_Size" = "B25010_001E",
+                  "Household_Income_All" = "B19001_001E",
+                  "Household_Income_All_low1" = "B19001_002E",
+                  "Household_Income_All_low2" = "B19001_003E",
+                  "Household_Income_All_low3" = "B19001_004E",
+                  "Household_Income_All_high1" = "B19001_014E",
+                  "Household_Income_All_high2" = "B19001_015E",
+                  "Household_Income_All_high3" = "B19001_016E",
+                  "Household_Income_All_high4" = "B19001_017E",
+                  "Household_Income_White" = "B19001H_001E",
+                  "Household_Income_White_high1" = "B19001H_014E",
+                  "Household_Income_White_high2" = "B19001H_015E",
+                  "Household_Income_White_high3" = "B19001H_016E",
+                  "Household_Income_White_high4" = "B19001H_017E",
+                  "Household_Income_Black" = "B19001B_001E",
+                  "Household_Income_Black_low1" = "B19001B_002E",
+                  "Household_Income_Black_low2" = "B19001B_003E",
+                  "Household_Income_Black_low3" = "B19001B_004E",
+                  "Household_Income_Hispanic" = "B19001I_001E",
+                  "Household_Income_Hispanic_low1" = "B19001I_002E",
+                  "Household_Income_Hispanic_low2" = "B19001I_003E",
+                  "Household_Income_Hispanic_low3" = "B19001I_004E",
+                  "Household_Income_Asian" = "B19001D_001E",
+                  "Household_Income_Asian_low1" = "B19001D_002E",
+                  "Household_Income_Asian_low2" = "B19001D_003E",
+                  "Household_Income_Asian_low3" = "B19001D_004E"
+    ),
+    year = year,
+    survey = "acs5",
+    output = "wide",
+    geometry = FALSE,
+    state = 36
+  ) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households,
+           All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+           All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+           White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+           Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+           Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+           Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3)
+  #st_transform(crs = st_crs(4326)) %>%
+  #filter(!st_is_empty(.))
+  return(acs_year)
+}
+
+## Get yearly median income data from 2016 to 2020:
+get_income <- function(){
+  
+  median_income_yearly <- NULL
+  for(year_num in 2016:2019){
+    acs_data_yearly <- get_acs_5year(GEOGRAPHIC_RESOLUTION,year_num) %>%
+      mutate(year = year_num) %>%
+      select(GEOID,Median_Income_Household, 
+             Total_pop,White, Black, Asian, Hispanic, Other,
+             Households,Size_per_House,Avg_Household_Size,
+             year,
+             Household_Income_All,
+             All_household_income_low,All_household_income_high,
+             White_household_income_high, Black_household_income_low,
+             Hispanic_household_income_low, Asian_household_income_low)
+    median_income_yearly <- rbind(median_income_yearly,acs_data_yearly)
+  }
+  
+  ## Median Income of ACS5/ACS1 for NY in 2020 cannot be directly extracted.
+  acs_data_2020 <- get_acs(
+    geography = GEOGRAPHIC_RESOLUTION,
+    variables = c("Median_Income_Household" = "B19013_001E",
+                  "Total_pop" = "B01001_001E",
+                  "White" = "B03002_003E",
+                  "Black" = "B03002_004E",
+                  "Asian" = "B03002_006E",
+                  "Hispanic" = "B03001_003E",
+                  "Households" = "B11001_001E",
+                  "Avg_Household_Size" = "B25010_001E",
+                  "Household_Income_All" = "B19001_001E",
+                  "Household_Income_All_low1" = "B19001_002E",
+                  "Household_Income_All_low2" = "B19001_003E",
+                  "Household_Income_All_low3" = "B19001_004E",
+                  "Household_Income_All_high1" = "B19001_014E",
+                  "Household_Income_All_high2" = "B19001_015E",
+                  "Household_Income_All_high3" = "B19001_016E",
+                  "Household_Income_All_high4" = "B19001_017E",
+                  "Household_Income_White" = "B19001H_001E",
+                  "Household_Income_White_high1" = "B19001H_014E",
+                  "Household_Income_White_high2" = "B19001H_015E",
+                  "Household_Income_White_high3" = "B19001H_016E",
+                  "Household_Income_White_high4" = "B19001H_017E",
+                  "Household_Income_Black" = "B19001B_001E",
+                  "Household_Income_Black_low1" = "B19001B_002E",
+                  "Household_Income_Black_low2" = "B19001B_003E",
+                  "Household_Income_Black_low3" = "B19001B_004E",
+                  "Household_Income_Hispanic" = "B19001I_001E",
+                  "Household_Income_Hispanic_low1" = "B19001I_002E",
+                  "Household_Income_Hispanic_low2" = "B19001I_003E",
+                  "Household_Income_Hispanic_low3" = "B19001I_004E",
+                  "Household_Income_Asian" = "B19001D_001E",
+                  "Household_Income_Asian_low1" = "B19001D_002E",
+                  "Household_Income_Asian_low2" = "B19001D_003E",
+                  "Household_Income_Asian_low3" = "B19001D_004E"),
+    year = 2020,
+    survey = "acs5",
+    output = "wide",
+    geometry = FALSE) %>%
+    filter(GEOID %in% median_income_yearly$GEOID) %>%
+    mutate(year = 2020) %>%
+    mutate(Other = Total_pop - White - Black - Asian - Hispanic,
+           Size_per_House = Total_pop/Households,
+           All_household_income_low = Household_Income_All_low1+Household_Income_All_low2+Household_Income_All_low3,
+           All_household_income_high = Household_Income_All_high1+Household_Income_All_high2+Household_Income_All_high3+Household_Income_All_high4,
+           White_household_income_high = Household_Income_White_high1+Household_Income_White_high2+Household_Income_White_high3+Household_Income_White_high4,
+           Black_household_income_low = Household_Income_Black_low1+Household_Income_Black_low2+Household_Income_Black_low3,
+           Hispanic_household_income_low = Household_Income_Hispanic_low1+Household_Income_Hispanic_low2+Household_Income_Hispanic_low3,
+           Asian_household_income_low = Household_Income_Asian_low1 + Household_Income_Asian_low2 + Household_Income_Asian_low3) %>%
+    select(GEOID,Median_Income_Household, 
+           Total_pop,White, Black, Asian, Hispanic, Other,
+           Households,Size_per_House,Avg_Household_Size,
+           year,
+           Household_Income_All,
+           All_household_income_low,All_household_income_high,
+           White_household_income_high, Black_household_income_low,
+           Hispanic_household_income_low, Asian_household_income_low)
+  
+  median_income_yearly <- rbind(median_income_yearly,acs_data_2020)
+  
+  
+  ## Linear Interpolation for median income data
+  median_income_yearly <- median_income_yearly %>%
+    group_by(GEOID) %>%
+    arrange(year) %>%
+    mutate(Imputed = 
+             ifelse(rep(all(is.na(Median_Income_Household)),length(year)), NA,
+                    na.approx(Median_Income_Household, year,rule = 2))) %>%
+    ungroup() %>%
+    mutate(Scaled_Income = as.numeric(scale(Imputed)))
+  
+  return(median_income_yearly)
+}
+
+
+## Merge Data
+Merge_Datasets <- function(median_income){
+  
+  HICDD_monthly <- readRDS(file.path(data_path, "HICDD.rds"))
+  
+  monthly_data <- readRDS(file.path(data_path, "energy", "final_energy_data.rds")) %>%
+    mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy)) %>%
+    left_join(HICDD_monthly, by = c("GEOID","year","month")) %>%
+    left_join(median_income, by = c("GEOID", "year")) %>%
+    mutate(groups = paste0(year,"_",month)) %>%
+    mutate(Total_pop_scaled = as.numeric(scale(Total_pop))) %>%
+    mutate(Households_scaled = as.numeric(scale(Households))) %>%
+    mutate(True_Energy_normalized = ifelse(is.na(True_Energy),NA,True_Energy/Households)) %>%
+    mutate(Total_Energy_normalized = ifelse(is.na(Total_Energy),NA,Total_Energy/Households))
+    
+}
+

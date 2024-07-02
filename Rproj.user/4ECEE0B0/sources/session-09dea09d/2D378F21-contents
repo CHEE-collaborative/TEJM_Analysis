@@ -1,0 +1,1087 @@
+---
+title: "Energy Data Download and Cleaning"
+output: html_document
+date: "2023-06-15"
+---
+
+```{r}
+################################################################################
+#################################### NOTE ######################################
+################################################################################
+
+# zip code to ZCTA crosswalk needs to be downloaded locally and was retrieved from this website
+# https://udsmapper.org/zip-code-to-zcta-crosswalk/
+
+# API URL retrieved from this website
+# https://data.ny.gov/Energy-Environment/Utility-Energy-Registry-Monthly-ZIP-Code-Energy-Us/tzb9-c2c6
+
+# Communities shapefile received via email from UER. Email anna.stouffer@yale.edu.
+
+# (don't need this but keeping these links in case something goes wrong) 
+# previously used communities shapefile retrieved from this link
+# https://gis.ny.gov/civil-boundaries
+# https://hub.arcgis.com/datasets/RochesterNY::new-york-state-municipal-civil-boundaries/about 
+
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################ load library ##################################
+################################################################################
+
+library(tigris)
+library(ggplot2)
+library(dplyr)
+library(sf)
+library(readxl)
+library(usmap)
+library(here)
+
+sf_use_s2(FALSE)
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+########################## Setting Directories #################################
+################################################################################
+
+ANNA_DATADIR = here("anna")
+
+DATA_DATADIR <- file.path(ANNA_DATADIR, "data")
+
+ENERGY_DATADIR = "energy_data"
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################ Maintenance ###################################
+################################################################################
+
+# create data folder if it doesn't already exist
+if(!dir.exists(here(DATA_DATADIR))){dir.create(here(DATA_DATADIR))}
+
+# create energy folder in data folder if it doesn't already exist 
+if(!dir.exists(here("data", ENERGY_DATADIR))){dir.create(here("data", ENERGY_DATADIR))}
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################################ Zip Code Energy ###############################
+################################################################################
+
+# API to retrieve energy data. note the "?$limit=1000000" at the end of the URL.
+# Without this, the API will only retrieve the first 1000 records. 
+url = "https://data.ny.gov/resource/tzb9-c2c6.geojson?$limit=1000000"
+
+# reading in the energy data
+shape = st_read(url)
+
+# filtering the shapefile to contain only electricity data in the warm season months
+filtered_shape <- subset(shape, data_field_display_name == "Residential Consumption (R)" & data_class == "electricity" & month %in% c(5, 6, 7, 8, 9) & value > 0)
+# filtered_shape <- filtered_shape %>% st_drop_geometry() 
+# reading in zip code to ZCTA crosswalk
+zip_crosswalk = read_excel(here("anna", "data", "Uploaded Files", "ZIPCodetoZCTACrosswalk2020UDS.xlsx"))
+zip_crosswalk = read_excel("/home/xz578/TEJM/TEJM-main/anna/data/Uploaded Files/ZIPCodetoZCTACrosswalk2020UDS.xlsx")
+# Join the dataframes based on zip code
+energy_per_zcta <- filtered_shape %>%
+  left_join(zip_crosswalk, by = c("zip_code" = "ZIP_CODE")) %>%
+  dplyr::select(ZCTA, value, number_of_accounts, month, year, utility_display_name) 
+# saveRDS(energy_per_zcta,"/home/xz578/TEJM/LQMM/energy_zcta.rds")
+# Calculate the sum of energy usage and number of accounts per ZCTA per month per year
+energy_per_zcta_summary <- energy_per_zcta %>%
+  group_by(ZCTA, month, year) %>%
+  summarise(total_energy = sum(as.numeric(value)),
+            total_accounts = sum(as.numeric(number_of_accounts)))
+
+# normalize energy usage by number of accounts
+energy_per_zcta_summary <- energy_per_zcta_summary %>%
+  mutate(normalized_energy_usage = total_energy / total_accounts)
+
+# view data
+head(energy_per_zcta_summary)
+
+# view centroids of energy data
+# plot(filtered_shape[9])
+# saveRDS(energy_per_zcta_summary,"/home/xz578/TEJM/TEJM-main/anna/data/energy_data/energy_zcta_summary.rds")
+################################################################################
+################################################################################
+
+```
+
+```{r}
+################################################################################
+##### Plotting the data with a uniform color scale to visualize and compare ####
+################################################################################
+
+# getting zctas from tigris for outlines on plot
+zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+
+# setting the crs of the zctas
+zctas <- st_transform(zctas, crs = st_crs(energy_per_zcta_summary))
+
+# joining the zctas with the energy data
+joined <- st_join(zctas, energy_per_zcta_summary)
+
+# finding the years for which the energy data is available
+years <- unique(joined$year)
+
+# setting min and max values for color scale
+max_value <- max(joined$normalized_energy_usage, na.rm = TRUE)
+min_value <- min(joined$normalized_energy_usage, na.rm = TRUE)
+
+# setting coordinates for ggplot
+NY_BBOX <- c(46, -80, 40, -71)
+xlim <- c(NY_BBOX[2], NY_BBOX[4])
+ylim <- c(NY_BBOX[1], NY_BBOX[3])
+
+
+# # loop for plotting
+# for (year in years) {
+# filtered_data <- joined[joined$year == year, ]
+# for (month in c(5, 6, 7, 8, 9)) {
+#   filtered_data_month <- filtered_data[filtered_data$month == month, ]
+#  if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+#       plot_title <- paste("No data for", month, "/", year)
+#       plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+#       next  
+#    }
+#   plot_title <- paste("Zipcode-Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+#   plot <- ggplot(filtered_data_month) +
+#     geom_sf(aes(fill = normalized_energy_usage)) +
+#     scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+#                         breaks = seq(min_value, max_value, length.out = 5),
+#                         limits = c(min_value, max_value)) +
+#     labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+#     theme_minimal() +
+#     theme(legend.position = "right") +
+#     coord_sf(xlim = xlim, ylim = ylim, lims_method = "geometry_bbox")
+#   print(plot)
+# 
+# }
+# }
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+########################### Community Energy ###################################
+################################################################################
+
+# downloading community energy data 
+c_url = "https://data.ny.gov/resource/m3xm-q3dw.geojson?$limit=2000000"
+
+# reading community energy data from file
+c_shape = st_read(c_url)
+
+# selecting for only the data we want
+c_filtered_shape <- subset(c_shape, data_field_display_name == "Residential Consumption (R)" & data_class == "electricity" & month %in% c(5, 6, 7, 8, 9) & value > 0)
+
+# set the crs of the zctas shapefile to be the same as the energy
+c_zctas <- st_transform(zctas, crs = st_crs(c_filtered_shape))
+
+# join the zctas and the energy data
+c_joined <- st_join(c_zctas, c_filtered_shape)
+
+# calculate the normalized energy usage
+c_joined <- c_joined %>%
+  mutate(normalized_energy_usage = as.numeric(value) / as.numeric(number_of_accounts))
+# saveRDS(c_joined,"/home/xz578/TEJM/TEJM-main/anna/data/energy_data/c_joined.rds")
+
+# finding the years for which the energy data is available
+years <- unique(c_joined$year)
+
+# setting min and max values for color scale
+max_value <- max(c_joined$normalized_energy_usage, na.rm = TRUE)
+min_value <- min(c_joined$normalized_energy_usage, na.rm = TRUE)
+
+# setting coordinates for ggplot
+NY_BBOX <- c(46, -80, 40, -71)
+xlim <- c(NY_BBOX[2], NY_BBOX[4])
+ylim <- c(NY_BBOX[1], NY_BBOX[3])
+
+# plot for visualizing
+# for (year in years) {
+# 
+#   filtered_data <- c_joined[c_joined$year == year, ]
+#   
+#   for (month in c(5, 6, 7, 8, 9)) {
+# 
+#     filtered_data_month <- filtered_data[filtered_data$month == month, ]
+#     
+#    if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+#         plot_title <- paste("No data for", month, "/", year)
+#         plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+#         next  
+#      }
+# 
+#     plot_title <- paste("Community-Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+#     
+#     plot <- ggplot(filtered_data_month) +
+#       geom_sf(aes(fill = normalized_energy_usage)) +
+#       scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+#                           breaks = seq(min_value, max_value, length.out = 5),
+#                           limits = c(min_value, max_value)) +
+#       labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+#       theme_minimal() +
+#       theme(legend.position = "right") +
+#       coord_sf(xlim = xlim, ylim = ylim, lims_method = "geometry_bbox")
+#       
+#     print(plot)
+#   
+#   }
+# }
+
+################################################################################
+################################################################################
+
+```
+
+```{r}
+################################################################################
+## merging the community level data and the zip code level data and plotting ###
+################################################################################
+
+# Find common column names
+common_cols <- intersect(colnames(filtered_shape), colnames(c_filtered_shape))
+
+# subset the objects to include only the common columns
+filtered_shape <- filtered_shape[, common_cols]
+c_filtered_shape <- c_filtered_shape[, common_cols]
+
+# combine the zip code and community level energy data
+combined_shape <- rbind(filtered_shape, c_filtered_shape)
+
+# join the energy data with zcta spatial boundaries
+combined_shape <- st_join(c_zctas, combined_shape)
+
+# create a column of normalized energy values by number of accounts
+combined_shape <- combined_shape %>%
+  mutate(normalized_energy_usage = as.numeric(value) / as.numeric(number_of_accounts))
+
+# calculate the log-transformed values for the legend
+combined_shape$log_normalized_energy_usage <- log(combined_shape$normalized_energy_usage)
+# saveRDS(st_drop_geometry(combined_shape), "/home/xz578/TEJM/TEJM-main/anna/data/energy_data/combined_joined.rds")
+# get the min and max values of the log-transformed data
+min_value <- 0
+max_value <- max(combined_shape$log_normalized_energy_usage, na.rm = TRUE)
+
+# setting coordinates for ggplot
+NY_BBOX <- c(46, -80, 40, -71)
+xlim <- c(NY_BBOX[2], NY_BBOX[4])
+ylim <- c(NY_BBOX[1], NY_BBOX[3])
+
+# loop that plots warm season months for each year to visualize the data
+for (year in years) {
+  filtered_data <- combined_shape[combined_shape$year == year, ]
+  
+  for (month in c(5, 6, 7, 8, 9)) {
+    filtered_data_month <- filtered_data[filtered_data$month == month, ]
+    
+    if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+      plot_title <- paste("No data for", month, "/", year)
+      plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+      next
+    }
+    
+    plot_title <- paste("Combined Community and Zip Code Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+    
+    plot <- ggplot(filtered_data_month) +
+      geom_sf(aes(fill = normalized_energy_usage)) +
+      scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+                          breaks = seq(min_value, max_value, length.out = 5),
+                          limits = c(min_value, max_value)) +
+      labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+      theme_minimal() +
+      theme(legend.position = "right")
+      
+    print(plot)
+  }
+}
+
+head(combined_shape) 
+
+################################################################################
+################################################################################
+
+```
+
+```{r}
+################################################################################
+######################## visualizing missing data ##############################
+################################################################################
+
+# plot that has the shaded zctas for all months of interest over all years of interest
+# missing zctas in this plot mean we have no data for them
+plot(combined_shape[24])
+
+# Find the unique ZCTA5CE10 values that correspond to NA values in the "value" column
+zctas_with_na <- unique(combined_shape$ZCTA5CE10[is.na(combined_shape$value)])
+
+# Initialize an empty vector to store ZCTA5CE10 values with all NA rows
+zctas_with_all_na <- c()
+
+# Check if any of the ZCTAs have all NA rows in the combined_shape dataframe
+for (zcta in zctas_with_na) {
+  rows_with_na <- combined_shape[combined_shape$ZCTA5CE10 == zcta, ]
+  if (all(is.na(rows_with_na$value))) {
+    zctas_with_all_na <- c(zctas_with_all_na, zcta)
+  }
+}
+
+# Print the ZCTA5CE10 values with all NA rows
+print(zctas_with_all_na)
+
+# number of zctas with no data
+length(zctas_with_all_na)
+
+################################################################################
+################################################################################
+
+```
+
+```{r}
+# next steps
+# annotate code super well for Frank 
+# understand patterns for data that we do have (spatially and temporally)
+# look where bad estimates are (are there some ZCTAS that always have 3000% wrong)
+# why are there estimates on long island
+```
+
+```{r}
+################################################################################
+###################### Communities Shapefile from UER ##########################
+################################################################################
+
+# # communities shapefile from UER
+# uer_communities = st_read(here(DATA_DATADIR, "Uploaded Files", "NY_Community_Census_2018.dbf"))
+# 
+# # uer_shapes <- dplyr::select(c_shape %>% mutate(FULL_FIPS = full_fips), FULL_FIPS) %>% unique()
+# # uer_communities <- uer_communities %>% left_join(uer_shapes, by = c("FULL_FIPS"))
+# # uer_communities <- st_as_sf(uer_communities)
+# # Set the CRS for uer_communities to WGS 84 (EPSG:4326)
+# st_crs(uer_communities) <- st_crs(4326)
+# 
+# # Now you can perform the transformation
+# uer_communities <- st_transform(uer_communities, crs = st_crs(c_filtered_shape))  %>% filter(!st_is_empty(geometry)) %>% filter(FULL_FIPS != "3607156185")
+# plot(uer_communities)
+
+uer_communities = st_read(here(DATA_DATADIR, "Uploaded Files", "communites_transformed.geojson"))
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+############# visualizing communities and zctas boundaries #####################
+################################################################################
+
+# read in communities shapefile from file
+#communities = st_read(here(DATA_DATADIR, "Uploaded Files", "New_York_State_Municipal_Civil_Boundaries.geojson"))
+
+# turning the communities into centroids
+centroids = st_centroid(uer_communities)
+
+# Plot the ZCTA outlines and centroids
+plot = ggplot() +
+  geom_sf(data = zctas, fill = NA, color = "blue") +
+  geom_sf(data = centroids, color = "red", shape = 3, size = 2) +
+  labs(title = "ZCTA Outlines with Centroids")
+
+# replace second line with geom_sf(data = uer_communities, fill = NA, color = "red") + to see outline overlays 
+
+library(plotly)
+
+# Convert the ggplot2 plot to an interactive plotly object
+plotly_obj <- ggplotly(plot) 
+
+# Open the plot in a separate window for interactive viewing
+plotly::ggplotly(plotly_obj)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+################################################################################
+############### Matching Each Building Polygon into a Community ################
+################################################################################
+####################### THIS TAKES 3 HOURS TO RUN ##############################
+################################################################################
+###################### Rewritten By Frank on 9/7 ###############################
+sf_use_s2(FALSE)
+
+# reading in cleaned building polygons from file
+clean_buildings = st_read(here(DATA_DATADIR, "buildings_data", "cleaned_buildings.geojson"))
+
+# transform the geometry to the appropriate projected CRS (UTM Zone 18N) to calculate area
+clean_buildings_transformed <- st_transform(clean_buildings, "+proj=utm +zone=18 +datum=WGS84 +units=m +no_defs")
+
+# calculate the area of each building
+buildings_area = st_area(clean_buildings_transformed)
+
+# Get centroids
+clean_buildings_centroids <- st_centroid(clean_buildings)
+clean_buildings_centroids$area <- as.numeric(buildings_area)
+
+clean_buildings_centroids <- st_read("/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/New_cleaned_buildings_0.geojson")
+# matching building polygons with the appropriate community (this takes around an hour to run)
+buildings_with_communities <- st_join(clean_buildings_centroids, uer_communities, join = st_within)
+
+
+# saving this data to file so we don't have to do the above step again (file is around 3 GB)
+output_file <- file.path(here(DATA_DATADIR, "buildings_data", "cleaned_buildings_communities.geojson"))
+output_file2 <- file.path(here(DATA_DATADIR, "buildings_data", "cleaned_buildings_centroids.geojson"))
+st_write(buildings_with_communities, output_file, driver = "GeoJSON", overwrite = TRUE)
+st_write(clean_buildings_centroids, output_file2, driver = "GeoJSON", overwrite = TRUE)
+# view data
+head(buildings_with_communities)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+# ################################################################################
+# ############### Matching Each Building Polygon into a ZCTA #####################
+# ################################################################################DO NOT RUN THIS!!!
+# ###################### THIS TAKES 3 HOURS TO RUN ###############################
+# ################################################################################
+# ###################### Rewritten By Frank on 9/7 ###############################
+# 
+# # turns off spherical geometry
+# sf_use_s2(FALSE)
+# 
+# # defining the ZCTAs variable 
+# zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+# 
+# # reading in cleaned building polygons from file
+# # clean_buildings = st_read(here(DATA_DATADIR, "buildings_data", "cleaned_buildings.geojson"))
+# 
+# # setting the crs of the zctas shapefile
+# zctas <- st_transform(zctas, crs = st_crs(clean_buildings))
+# 
+# # matching building polygons with the appropriate zcta (this takes around 2.5 hours to run)
+# buildings_with_zctas <- st_join(clean_buildings_centroids, zctas, join = st_within)
+# 
+# # saving this data to file so we don't have to do the above step again (file is around 2.6 GB)
+# output_file <- file.path(here(DATA_DATADIR, "buildings_data", "cleaned_buildings_zctas.geojson"))
+# # st_write(buildings_with_zctas, output_file, driver = "GeoJSON")
+# 
+# ################################################################################
+################################################################################
+```
+
+```{r}
+# ################################################################################
+# ############# Aggregate Buildings by Community for Community Area ##############
+# ################################################################################ See Code Sections Below
+# ####################### THIS TAKES 30 MINUTES TO RUN ###########################
+# ################################################################################
+# 
+# # reading in the buildings with community tags in from file
+# buildings_with_communities = st_read(here(DATA_DATADIR, "buildings_data", "cleaned_buildings_communities.geojson"))
+# 
+# # calculating the total building area for each community (this takes about 20 minutes to run)
+# community_areas <- buildings_with_communities %>%
+#   group_by(COM_NAME,COM_TYPE) %>%
+#   summarize(building_per_community_area = sum(area))
+# 
+# # dropping the spatial aspect of the data
+# non_spatial_data <- st_drop_geometry(community_areas)
+# community_area <- non_spatial_data
+# 
+# # saving this data to file so we don't have to do the above step again (file is around 800 MB)
+# output_file <- file.path(here(DATA_DATADIR, "buildings_data", "community_total_building_areas.csv"))
+# # write.csv(non_spatial_data, output_file)
+# 
+# ################################################################################
+# ################################################################################
+```
+
+```{r}
+# ################################################################################
+# ################ Aggregate Buildings by ZCTA for ZCTA Area #####################
+# ################################################################################ See Code Sections Below
+# ####################### THIS TAKES 30 MINUTES TO RUN ###########################
+# ################################################################################
+# 
+# # reading in the buildings with zcta tags in from file
+# buildings_with_zctas = st_read(here(DATA_DATADIR, "buildings_data", "cleaned_buildings_zctas.geojson"))
+# 
+# # calculting the total building area for each community (this takes about 20 minutes to run)
+# zcta_areas <- buildings_with_zctas %>%
+#   st_drop_geometry(.) %>%
+#   group_by(ZCTA5CE10) %>%
+#   summarize(building_per_zcta_area = sum(area))
+# 
+# # saving this data to file so we don't have to do the above step again (file is around 800 MB)
+# output_file <- file.path(here(DATA_DATADIR, "buildings_data", "zcta_total_building_areas.csv"))
+# # write.csv(zcta_areas, output_file)
+# 
+# ################################################################################
+# ################################################################################
+```
+
+```{r}
+################################################################################
+########### Adding ZCTA Labels to Buildings With Community Labels ##############
+################################################################################
+###################### Quick ###############################
+############################################################
+
+# setting the crs of the zctas variable
+zctas <- zctas(cb = FALSE, year = 2010, state = "New York")
+zctas <- st_transform(zctas, crs = st_crs(buildings_with_communities))
+
+# matching building polygons with the appropriate zcta (this takes around 2.5 hours to run)
+buildings_with_communities_and_zctas <- st_join(buildings_with_communities, zctas, join = st_within)
+
+# saving this data to file so we don't have to do the above step again (file is around 2.6 GB)
+output_file <- file.path(here(DATA_DATADIR, "buildings_data", "New_buildings_with_com_and_zip_0.geojson"))
+st_write(buildings_with_communities_and_zctas, "/home/xz578/TEJM/TEJM-main/anna/data/buildings_data/New_buildings_with_com_and_zip_0.geojson", driver = "GeoJSON")
+
+buildings_with_communities_and_zctas <- st_read(file.path(here(DATA_DATADIR, "buildings_data", "buildings_with_com_and_zip.geojson")))
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+##########   Matching Each Building Polygon into Block Heights  ################
+################################################################################
+####################### THIS TAKES HOURS TO RUN   ##############################
+################################################################################
+####################### Added By Frank on 9/10 ###############################
+sf_use_s2(FALSE)
+
+# reading in cleaned building polygons from file
+# clean_buildings = st_read(here(DATA_DATADIR, "buildings_data", "buildings_with_com_and_zip.geojson"))
+clean_buildings = st_read(here(DATA_DATADIR, "buildings_data", "New_buildings_with_com_and_zip_0.geojson"))
+
+# Obtain Block areas and geometry data.
+block_heights <- st_read(here(DATA_DATADIR,"Uploaded Files","srtm_derived_building_heights_by_block_group_conterminous_US","srtm_bg_building_heights.gdb")) %>%
+  select(Height_cat, Shape)
+block_heights <- st_transform(block_heights, st_crs(clean_buildings))
+
+# Fix invalid geometries
+# which(!st_is_valid(block_heights))
+block_heights <- st_make_valid(block_heights)
+
+# Crop The NY state
+# finding the extent of new york state 
+usa <-getData('GADM', country='USA', level=1)
+aoi <- usa[usa$NAME_1 == "New York", ]
+aoi <- st_as_sf(aoi)
+ny_extent <- st_as_sfc(aoi) %>% st_geometry()
+ny_extent_larger <- st_buffer(ny_extent, dist = 0.1) %>% # To avoid borderline intersection
+  st_transform(., st_crs(clean_buildings))
+
+
+block_heights <- st_crop(block_heights ,ny_extent_larger)
+
+# matching building polygons with the appropriate community (this takes around an hour to run)
+buildings_with_heights <- st_join(clean_buildings, block_heights, join = st_within)
+
+
+# saving this data to file so we don't have to do the above step again (file is around 3 GB)
+# output_file <- file.path(here(DATA_DATADIR, "buildings_data", "buildings_with_com_and_zip_and_heights.geojson"))
+# st_write(buildings_with_heights, output_file, driver = "GeoJSON", overwrite = TRUE)
+# buildings_with_heights <- st_read(output_file)
+  
+# view data
+head(buildings_with_heights)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+################################################################################
+###############          Visualize Missing Values            ###################
+################################################################################
+####################### THIS TAKES HOURS TO RUN   ##############################
+################################################################################
+####################### Added By Frank on 9/10 ###############################
+#We have 21 buildings without being assigned with a community and 30718 buildings without being assigned with a Height_cat.
+buildings_with_missing_COM <- buildings_with_heights %>% filter(is.na(COM_NAME))
+buildings_with_missing_Height <- buildings_with_heights %>% filter(is.na(Height_cat))
+
+
+gg_map <- ggplot(data = uer_communities) + 
+  geom_sf(fill = "lightgray") +
+  theme_minimal()
+gg_map + geom_sf(data = buildings_with_missing_COM, aes(), color = "red", size = 1)
+gg_map + geom_sf(data = buildings_with_missing_Height, aes(), color = "red", size = 1)
+################################################################################
+################################################################################
+```
+
+
+```{r}
+################################################################################
+###############          Impute Missing Values            ###################
+################################################################################
+####################### THIS TAKES HOURS TO RUN   ##############################
+################################################################################
+####################### Added By Frank on 9/10 ###############################
+#We have 21 buildings without being assigned with a community and 30718 buildings without being assigned with a Height_cat.
+
+#Impute Communities
+missing_index_COM <- which(is.na(buildings_with_heights$COM_NAME)|is.na(buildings_with_heights$COM_TYPE))
+
+for(i in missing_index_COM) {
+  distances <- st_distance(buildings_with_heights[i,], uer_communities)
+  closest_point <- which.min(as.vector(distances))
+  buildings_with_heights$COM_NAME[i] <- uer_communities$COM_NAME[closest_point]
+  buildings_with_heights$COM_TYPE[i] <- uer_communities$COM_TYPE[closest_point]
+}
+
+
+# Impute heights
+missing_index_Height <- which(is.na(buildings_with_heights$Height_cat))
+missing_Height <- buildings_with_heights[missing_index_Height,]
+missing_Height$index <- missing_index_Height
+
+## Impute missing values in Long Island
+### bbox for long island
+long_island_bbox <- st_bbox(c(xmin = -74, ymin = 40.594, xmax = -71.856, ymax = 40.948), crs = 4326)
+long_island <- st_as_sfc(long_island_bbox) 
+long_island_missing_buildings <- st_intersection(missing_Height, long_island)
+missing_index_Height_Long_Island <- long_island_missing_buildings$index
+
+for(i in missing_index_Height_Long_Island) {
+  distances <- st_distance(buildings_with_heights[i,], block_heights)
+  closest_point <- which.min(as.vector(distances))
+  buildings_with_heights$`Height_cat`[i] <- block_heights$Height_cat[closest_point]
+}
+
+## Impute missing values in the middle part
+### bbox for middle part
+missing_index_Height_Middle_part <- setdiff(missing_index_Height,missing_index_Height_Long_Island)
+missing_Height_middle_part <- buildings_with_heights[missing_index_Height_Middle_part,]
+middle_part_bbox <- st_bbox(missing_Height_middle_part, crs = 4326)
+middle_part <- st_as_sfc(middle_part_bbox) 
+middle_part_larger <- st_buffer(middle_part, dist = 0.1) #Get neighbor block groups
+block_heights_middle_part <- st_crop(block_heights ,middle_part_larger)
+#plot(block_heights_middle_part) #This area may have nearly few buildings. We impute these building as "Low".
+
+buildings_with_heights$`Height_cat`[missing_index_Height_Middle_part] <- "Low"
+
+output_file <- file.path(here(DATA_DATADIR, "buildings_data", "New_buildings_with_com_and_zip_and_heights_imputed_0.geojson"))
+st_write(buildings_with_heights, output_file, driver = "GeoJSON", overwrite = TRUE)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+################################################################################
+###############   Match each building with Occupied Ratio  #####################
+################################################################################
+####################### THIS TAKES HOURS TO RUN   ##############################
+################################################################################
+####################### Added By Frank on 9/16 ###############################
+sf_use_s2(FALSE)
+
+# buildings_with_heights <- st_read(file.path(here(DATA_DATADIR, "buildings_data", "buildings_with_com_and_zip_and_heights_imputed.geojson")))
+
+units_data <- get_decennial(
+    geography = "block",
+    variables = c("Total_pop" = "P001001",
+                  "Total_status_units" = "H003001",
+                  "Vacant" = "H003003",
+                  "Occupied" = "H003002",
+                  "Total_units" = "H001001"),
+    year = 2010,
+    output = "wide",
+    geometry = TRUE,
+    state = 36
+  ) %>%
+    st_transform(crs = st_crs(4326)) %>%
+    filter(!st_is_empty(.)) %>% 
+  filter(Total_pop >= 1) %>% 
+  mutate(occupied_ratio = Occupied/Total_units) %>%
+  mutate(occupied_ratio = ifelse(is.nan(occupied_ratio), 1, occupied_ratio)) %>%
+  dplyr::select(occupied_ratio, geometry)
+
+# test <- buildings_with_heights[1:10,]
+# test2 <- st_join(test, units_data, join = st_within)
+buildings_with_heights_ratio <- st_join(buildings_with_heights, units_data, join = st_within)
+output_file <- file.path(here(DATA_DATADIR, "buildings_data", "New_buildings_with_com_and_zip_and_heights_and_ratios_imputed_0.geojson"))
+st_write(buildings_with_heights_ratio, output_file, driver = "GeoJSON", overwrite = TRUE)
+
+################################################################################
+################################################################################
+```
+
+
+
+
+
+```{r}
+################################################################################
+############# Aggregate Buildings by Community for Community Area ##############
+################################################################################ We only need Community Area in Data analysis
+####################### THIS TAKES 30 MINUTES TO RUN ###########################
+################################################################################
+
+# reading in the buildings with community tags in from file
+buildings_with_communities = st_read(here(DATA_DATADIR, "buildings_data", "cleaned_buildings_communities.geojson"))
+
+# calculating the total building area for each community (this takes about 20 minutes to run)
+community_areas <- buildings_with_communities %>%
+  st_drop_geometry(.) %>%
+  group_by(COM_NAME,COM_TYPE) %>%
+  summarize(building_per_community_area = sum(area))
+
+# saving this data to file so we don't have to do the above step again (file is around 800 MB)
+output_file <- file.path(here(DATA_DATADIR, "buildings_data", "community_total_building_areas_True.csv"))
+write.csv(community_areas, output_file)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+# ################################################################################
+# ########## Plot for Visualizing Actual Energy Data for Comparison ##############
+# ################################################################################
+# 
+# # define years and months of energy data we want to view
+# years = c(2016)
+# months = c(5)
+# 
+# #plot for visualizing
+# for (year in years) {
+#   
+#   # filter for desired year
+#   filtered_data <- c_joined[c_joined$year == year, ]
+# 
+#   for (month in months) {
+#     
+#     # filter for desired month 
+#     filtered_data_month <- filtered_data[filtered_data$month == month, ]
+# 
+#     # set condition for if there is no data for selected date
+#    if (all(is.na(filtered_data_month$normalized_energy_usage))) {
+#         plot_title <- paste("No data for", month, "/", year)
+#         plot(NA, xlim = c(0, 1), ylim = c(0, 1), main = plot_title, xlab = "", ylab = "")
+#         next
+#      }
+# 
+#     plot_title <- paste("Community-Level Electricity Usage in", month, "/", year, "Plotted by ZCTA")
+#     
+#     # make the data numeric
+#     filtered_data_month$value = as.numeric(filtered_data_month$value)
+#     
+#     plot_compare <- ggplot(filtered_data_month) +
+#       geom_sf(aes(fill = value)) +
+#       scale_fill_gradient(low = "blue", high = "red", na.value = "white",
+#                           limits = c(0, 5000)) +
+#       labs(title = plot_title, fill = "Normalized Energy Usage (MWh)") +
+#       theme_minimal() +
+#       theme(legend.position = "right") +
+#       coord_sf(xlim = xlim, ylim = ylim, lims_method = "geometry_bbox")
+# 
+#     print(plot_compare)
+# 
+#   }
+# }
+# 
+# ################################################################################
+# ################################################################################
+```
+
+
+
+```{r}
+################################################################################
+############### Dasyametric Energy Usage Estimate Calculation ##################
+################################################################################
+################## THIS LOOP TAKES OVER 12 HOURS TO RUN ########################
+################################################################################
+
+# trying to make a loop but not successful yet
+
+# Load required libraries
+library(dplyr)
+library(sf)
+library(ggplot2)
+
+# reassign community_energy_data variable in case it has been overwritten
+community_energy_data = c_joined
+
+# Define the months and years to process
+months_to_process <- c(5:9)
+years_to_process <- c(2016:2020)
+
+# Initialize a list to store the results for each month and year
+all_comparison_data <- list()
+
+# Loop through each month and year
+for (selected_month in months_to_process) {
+  for (selected_year in years_to_process) {
+    
+    # print statement to let you know which date the code is currently processing
+    cat("Processing Month:", selected_month, "Year:", selected_year, "\n")
+
+    # Filter community_energy_data for the selected month and year
+    community_energy_data_month_year <- community_energy_data %>%
+      filter(month == selected_month, year == selected_year)
+    
+    # Convert energy data to centroids
+    centroids = st_centroid(community_energy_data_month_year)
+    
+    #centroids_to_join = centroids %>%
+    #  select(-NAME)
+    
+    # Find which community each energy centroid falls in (reapportioning data to communities shapefile we have)
+    community_energy_data_month_year <- st_join(centroids, uer_communities, join = st_within)
+
+    # Summing all the energy values within each community
+    aggregated_data <- community_energy_data_month_year %>%
+      mutate(COM_NAME = com_name) %>%
+      group_by(COM_NAME) %>%
+      summarize(total_energy_value = sum(as.numeric(value)),
+                total_number_of_accounts = sum(as.numeric(number_of_accounts)))
+  
+    # Add the area of the buildings for each community as a column in the dataset
+    result <- merge(aggregated_data, community_area, by = "COM_NAME", all.x = TRUE)
+    
+################################################################################    
+    result[result$ZCTA5CE10 == "11692",]
+    
+################################################################################
+    
+    # Calculate the energy used per square meter for each building in the county
+    result$energy_per_sqm <- result$total_energy_value / result$building_per_community_area
+    
+    # Add energy per square meter to the buildings dataset for each building, according to which community each building is in
+    test <- left_join(buildings_with_communities_and_zctas, st_drop_geometry(result), by = "COM_NAME")
+    test <- st_drop_geometry(test)
+    # Multiply energy_per_square_meter by the area of the buildings to get energy per building
+    test$energy_per_building <- test$area * test$energy_per_sqm
+    
+################################################################################
+
+
+    # long island ZCTAs are "11692", "11693", "11694", and "11697"
+    # they all of "New York" in the NAME column
+    
+    any_non_na <- any(!is.na(test[test$ZCTA5CE10 == "11694", "energy_per_building"]))
+    any_non_na
+    
+    non_na_rows <- subset(test, ZCTA5CE10 == "11694" & !is.na(energy_per_building))
+    print(non_na_rows)
+
+################################################################################
+
+    # Replace any building that returns NA for energy value with the average energy value per building of that Community (this takes 30 minutes per run)
+    avg_known_energy_by_zcta <- test %>%
+      group_by(COM_NAME) %>%
+      summarize(average = mean(energy_per_building, na.rm = TRUE))
+    
+    test <- test %>% left_join(avg_known_energy_by_zcta, by = "COM_NAME")
+    
+    test[is.na(test$energy_per_building),]$energy_per_building = test[is.na(test$energy_per_building),]$average
+
+
+    # Aggregate up to the ZCTA level, adding together energy per building
+    energy_per_zcta_dasy <- test %>%
+      group_by(ZCTA5CE10) %>%
+      summarize(total_energy_times_area = sum(energy_per_building, na.rm= T))
+    
+    energy_per_zcta_dasy_strict <- test %>%
+      group_by(ZCTA5CE10) %>%
+      summarize(total_energy_times_area = sum(energy_per_building)) 
+    
+    # energy_per_zcta_dasy[energy_per_zcta_dasy$ZCTA5CE10 == "11692",]
+
+
+    # Joining dasy data to ZCTAs for plotting
+    energy_per_zcta_dasy <- left_join(zctas, st_drop_geometry(energy_per_zcta_dasy), by = "ZCTA5CE10")
+    energy_per_zcta_dasy_strict <- left_join(zctas, st_drop_geometry(energy_per_zcta_dasy_strict), by = "ZCTA5CE10")
+    
+    # Construct the result name
+    result_name <- paste0("Month", selected_month, "_Year", selected_year)
+    
+    # all_comparison_data[[result_name]] <- energy_per_zcta_dasy_zctas
+    
+    # Get the data for the current month and year
+    # energy_per_zcta_current_date <- all_comparison_data[[result_name]]
+    
+    # Define the output file path
+    output_file <- file.path(here(DATA_DATADIR, "energy_data", paste0(result_name, ".geojson")))
+    output_file_strict <- file.path(here(DATA_DATADIR, "energy_data", paste0(result_name,"_strict", ".geojson")))
+     
+    # Save the data to GeoJSON file
+    st_write(energy_per_zcta_dasy, output_file, driver = "GeoJSON")
+    st_write(energy_per_zcta_dasy_strict, output_file_strict, driver = "GeoJSON")
+    
+    cat("Saved result for Month:", selected_month, "Year:", selected_year, "to", output_file, "\n")
+    
+  }
+}
+
+
+# # Access the result for a specific month and year, for example, month 5 and year 2016
+# result_for_5_2016 <- all_comparison_data[["Month5_Year2016"]]
+# 
+# # read in data from file
+# test_dasy_data = st_read(here(DATA_DATADIR, "energy_data", "Month5_Year2017.geojson"))
+# 
+# # plot data
+# plot(test_dasy_data[12])
+# names(test_dasy_data)
+
+################################################################################
+################################################################################
+```
+
+
+```{r}
+################################################################################
+######## Function to Compare Actual Energy to Dasyametric Estimates ############
+################################################################################
+
+CompareFunction = function(selected_month, selected_year, accumulator) {
+  file_name <- paste0("Month", selected_month, "_Year", selected_year)
+  file = st_read(here(DATA_DATADIR, "energy_data", paste0(file_name, ".geojson")))
+  
+  community_energy_data_month_year <- community_energy_data %>%
+      filter(month == selected_month, year == selected_year)
+  
+  # Calculate the sum of the "value" column for each group in community energy dataset
+  community_energy_data_month_year <- community_energy_data_month_year %>%
+  group_by(ZCTA5CE10) %>%
+  summarize(total_value = sum(as.numeric(value)))
+
+  # Merge the dataframes based on the "ZCTA5CE10" column
+  comparison_dataframe <- left_join(st_drop_geometry(file[,c("ZCTA5CE10", "total_energy_times_area")]), st_drop_geometry(community_energy_data_month_year[, c("ZCTA5CE10", "total_value")]), by = "ZCTA5CE10")
+  
+  # create a percent difference column
+  comparison_dataframe$percent_difference = round(((comparison_dataframe$total_value - comparison_dataframe$total_energy_times_area)/comparison_dataframe$total_energy_times_area) * 100, 2)
+  
+  comparison_dataframe$month = selected_month
+  comparison_dataframe$year = selected_year
+  
+  if (is.null(accumulator)) {
+    return(comparison_dataframe)
+  } else {
+    return(rbind(accumulator, comparison_dataframe))
+  }
+}
+
+
+months = c("5", "6", "7", "8")
+years = c("2016", "2017", "2018", "2019", "2020")
+accumulator = NULL
+
+for (selected_year in years) {
+  for (selected_month in months) {
+    accumulator = CompareFunction(selected_month, selected_year, accumulator)
+  }
+}
+
+################################################################################
+################################################################################
+```
+
+```{r}
+################################################################################
+################# Plotting Differences for Visualization #######################
+################################################################################
+
+dim(accumulator[accumulator$year == "2017",])
+
+comparison_dataframe = c()
+
+names(accumulator)
+
+average_percent_differences = accumulator %>%
+  group_by(ZCTA5CE10) %>%
+  summarize(average_percent_difference = mean(percent_difference, na.rm = TRUE))
+
+length(is.na(average_percent_differences$average_percent_difference))
+
+head(average_percent_differences, 200)
+
+names(average_percent_differences)
+
+plot(average_percent_differences[2])
+
+average_percent_differences_geo = left_join(zctas, average_percent_differences, by = "ZCTA5CE10")
+
+names(average_percent_differences_geo)
+
+plot(average_percent_differences_geo[12])
+
+
+average_percent_differences_geo_test = average_percent_differences_geo
+names(average_percent_differences_geo)
+
+# Apply a log transformation to the percent_difference data
+average_percent_differences_geo_test$log_percent_difference <- log(abs(average_percent_differences_geo$average_percent_difference + 1))
+
+# Create a plot using the log-transformed data
+log_transformed_plot <- ggplot(average_percent_differences_geo_test) +
+  geom_sf(aes(fill = log_percent_difference)) +
+  scale_fill_gradient(
+    low = "blue", high = "red", na.value = "white"
+  ) +
+ labs(title = "Average Percent Difference (Log Scale)", fill = "Log10(Absolute % Difference)") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# Print the log-transformed plot
+print(log_transformed_plot)
+
+sum(is.na(average_percent_differences_geo_test$log_percent_difference))
+
+
+# Create a plot using the log-transformed data
+regular_plot <- ggplot(average_percent_differences_geo) +
+  geom_sf(aes(fill = average_percent_difference)) +
+  scale_fill_gradient(
+    low = "blue", high = "red", na.value = "white", limits = c(-1000, 1000)
+  ) +
+ labs(title = "Average Percent Difference", fill = "% Difference") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# Print the log-transformed plot
+print(regular_plot)
+
+# Convert the ggplot2 plot to an interactive plotly object
+plotly_obj <- ggplotly(regular_plot) 
+
+# Open the plot in a separate window for interactive viewing
+plotly::ggplotly(plotly_obj)
+
+
+################################################################################
+################################################################################
+```
+
+
+
+

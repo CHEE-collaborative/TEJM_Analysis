@@ -1,0 +1,220 @@
+library(dplyr)
+library(ggplot2)
+library(tidycensus)
+library(lqmm)
+library(tidyr)
+library(gridExtra)
+
+data_table_cat <- readRDS("/home/xz578/TEJM/LQMM3/data_table_cat.rds")
+
+census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+zcta_geometry<- get_acs(
+  geography = "zcta",
+  variables = c("Median_Income_Household" = "B19013_001E",
+                "Total_pop" = "B01001_001E",
+                "Households" = "B11001_001E"
+  ),
+  year = 2019,
+  survey = "acs5",
+  output = "wide",
+  geometry = T,
+  state = 36
+)
+
+
+## Grouped with quantiles
+Model1 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_categorical_income_0.1.rds")
+Model2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_categorical_income_0.5.rds")
+Model3 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_categorical_income_0.9.rds")
+
+model_print <- function(Model){
+  
+  x <- Model$tTable
+  Names <- rownames(x)
+  Estimates <- x[,1] * 1000
+  lower <- x[,3] * 1000
+  upper <- x[,4] * 1000
+  
+  p_values <- x[,5]
+  significance <- ifelse(p_values < 0.001, "***",
+                         ifelse(p_values < 0.01, "**",
+                                ifelse(p_values < 0.05, "*", "")))
+  
+  df_estimates <- data.frame(Names = Names, Estimates = Estimates,
+                             lower = lower, upper = upper, p_values = p_values,
+                             significance = significance)
+  
+  # Formatted <- with(df_estimates, paste(sprintf("%.4f", Estimates), significance, "\n[", sprintf("%.2f", lower), ", ", sprintf("%.2f", upper), "]", sep = ""))
+  cat(sprintf("%s \n%.2f%s \n[%.2f, %.2f]\n\n", Names, Estimates, significance, lower, upper))
+}
+
+model_print(Model2)
+
+# round(Model3$tTable,2)
+slope_income <- data.frame(category = rep(factor(c("50,000-69,999", "70,000-89,999", ">= 90,000"),
+                                                 levels = c("50,000-69,999", "70,000-89,999", ">= 90,000")),3),
+                           point_estimate = c(Model1$tTable[7:9,1], 
+                                              Model2$tTable[7:9,1],
+                                              Model3$tTable[7:9,1]),
+                           lower = c(Model1$tTable[7:9,3],
+                                     Model2$tTable[7:9,3],
+                                     Model3$tTable[7:9,3]),
+                           upper = c(Model1$tTable[7:9,4],
+                                     Model2$tTable[7:9,4],
+                                     Model3$tTable[7:9,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+slope_income[,2:4] <- slope_income[,2:4] * 1000
+
+
+p1 <- ggplot(data = slope_income, 
+       aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Income Group",
+                     labels = c("$50,000-$69,999", "$70,000-$89,999", ">= $90,000"),
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption per household (Kwh)", y = "Quantile") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+p1
+
+
+## Total Energy plot
+Model1 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_categorical_income_0.1.rds")
+Model2 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_categorical_income_0.5.rds")
+Model3 <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_categorical_income_0.9.rds")
+# Model3$tTable
+# round(Model3$tTable,2)
+slope_income <- data.frame(category = rep(factor(c("50,000-69,999", "70,000-89,999", ">= 90,000"),
+                                                 levels = c("50,000-69,999", "70,000-89,999", ">= 90,000")),3),
+                           point_estimate = c(Model1$tTable[9:11,1], 
+                                              Model2$tTable[9:11,1],
+                                              Model3$tTable[9:11,1]),
+                           lower = c(Model1$tTable[9:11,3],
+                                     Model2$tTable[9:11,3],
+                                     Model3$tTable[9:11,3]),
+                           upper = c(Model1$tTable[9:11,4],
+                                     Model2$tTable[9:11,4],
+                                     Model3$tTable[9:11,4]),
+                           quantiles = c(rep(c("0.1","0.5","0.9"), each = 3)))
+
+p2 <- ggplot(data = slope_income, 
+             aes(x = point_estimate, y = quantiles, xmin = lower, xmax = upper,color = category)) +
+  geom_point(position = position_dodge(0.3),
+             size=2) +
+  geom_errorbarh(height = 0,
+                 position = position_dodge(0.3),
+                 size=1) +
+  theme_bw() +
+  scale_color_manual(name = "Income Group",
+                     labels = c("$50,000-$69,999", "$70,000-$89,999", ">= $90,000"),
+                     values = c("#FF6F61","#3F51B5","#FFC107"))+
+  # theme(panel.background = element_rect(fill = 'white'),
+  #       plot.background = element_rect(fill = 'white'))+
+  labs(x = "Additional energy consumption (Mwh)", y = "Quantile",
+       title = "Income Category (Total Energy)") +
+  theme(axis.text.x = element_text(size = 12, face = "bold"),  
+        axis.text.y = element_text(size = 12, face = "bold"),  
+        axis.title.x = element_text(size = 14, face = "bold"), 
+        axis.title.y = element_text(size = 14, face = "bold"))
+
+p2
+
+
+
+grid.arrange(p1,p2,nrow = 2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Line plot assuming median average household size and median number of households
+### Fix HICDD and compare different groups.
+Model1 <- readRDS("/home/xz578/TEJM/LQMM3/Income_group/model_0.1.rds")
+Model2 <- readRDS("/home/xz578/TEJM/LQMM3/Income_group/model_0.5.rds")
+Model3 <- readRDS("/home/xz578/TEJM/LQMM3/Income_group/model_0.9.rds")
+predictions_1 <- predict(Model1)
+predictions_2 <- predict(Model2)
+predictions_3 <- predict(Model3)
+
+###
+Median_Income_cat <- data_table_cat$Median_Income_cat
+dummies <- model.matrix(~ Median_Income_cat - 1)
+dummy_coefficients_1 <- rowSums(sapply(1:3, function(x){dummies[,x+1] * Model1$theta[8:10][x]}))
+dummy_coefficients_2 <- rowSums(sapply(1:3, function(x){dummies[,x+1] * Model2$theta[8:10][x]}))
+dummy_coefficients_3 <- rowSums(sapply(1:3, function(x){dummies[,x+1] * Model3$theta[8:10][x]}))
+
+predictions_1_new <- 153*Model1$theta[2] + 153*dummy_coefficients_1
+predictions_2_new <- 153*Model2$theta[2] + 153*dummy_coefficients_2
+predictions_3_new <- 153*Model3$theta[2] + 153*dummy_coefficients_3
+
+data_predict <- data_table_cat %>%
+  mutate(`prediction_0.1` = predictions_1_new,
+         `prediction_0.5` = predictions_2_new,
+         `prediction_0.9` = predictions_3_new)
+
+data_predict <- data_predict %>%
+  pivot_longer(
+    cols = starts_with("prediction_"),
+    names_to = c("Quantile"),
+    names_pattern = "prediction_(.*)", 
+    values_to = c("value")
+  )
+
+data_predict <- data_predict %>%
+  group_by(Median_Income_cat,year) %>%
+  summarize(Total_Energy = mean(value, na.rm=T), Households = mean(Households, na.rm=T)) %>%
+  mutate(normalized_energy_use = Total_Energy/Households)
+
+p1 <- ggplot(data_predict, aes(x = times2, y = normalized_energy_use, 
+                              color = Median_Income_cat, 
+                              group = Median_Income_cat,
+                              shape = Median_Income_cat)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(#title = "Average Energy Use per",
+    x = "Month",
+    y = "Average energy use per household (Mwh)",
+    color = "Income Groups",
+    shape = "Income Groups") +
+  scale_shape_manual(values = c(16, 17, 18,15)) +
+  scale_x_discrete(breaks = function(x) x[seq_along(x) %% 2 == 1]) +
+  facet_wrap(~ year, scales = "free_x") +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(size = 12, face = "bold",hjust = 1),  
+    axis.text.y = element_text(size = 12, face = "bold"),  
+    axis.title.x = element_text(size = 14, face = "bold"), 
+    axis.title.y = element_text(size = 14, face = "bold"),
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.position = c(1, 0), 
+    # legend.position = "none",
+    legend.justification = c(1.75, -0.6), 
+    # legend.key.size = unit(1.5, "lines"),
+    legend.text = element_text(size = 12),  # Increase legend text size
+    legend.title = element_text(size = 14))
+p1
+
+
+

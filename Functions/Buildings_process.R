@@ -1,0 +1,105 @@
+
+if(!dir.exists(file.path(data_path, "buildings"))){dir.create(file.path(data_path, "buildings"))}
+if(!dir.exists(file.path(data_path, "population"))){dir.create(file.path(data_path, "population"))}
+
+# GetCensusData_buildings <- function(geography) {
+#   census_data <- get_decennial(
+#     geography = geography,
+#     variables = c("Total_pop" = "P001001",
+#                   "Total_status_units" = "H003001",
+#                   "Vacant" = "H003003",
+#                   "Occupied" = "H003002",
+#                   "Total_units" = "H001001"),
+#     year = 2010,
+#     output = "wide",
+#     geometry = TRUE,
+#     state = 36
+#   ) %>%
+#     st_transform(crs = st_crs(4326)) %>%
+#     filter(!st_is_empty(.))
+#   
+#   return(census_data)
+# }
+
+#Merge rasters of UGLI population
+Merge_raster <- function(){
+  
+  sf_use_s2(FALSE)
+  #Download Data
+  url <- "https://springernature.figshare.com/ndownloader/files/35940383"
+  destfile <- file.path(data_path, "population","zip_file.zip")
+  
+  if (!file.exists(destfile)) {
+    download.file(url, destfile, mode = "wb")
+  }
+  unzip(destfile, exdir = file.path(data_path, "population","unzipped_files"))
+  
+  #Read tif data of population density 30m
+  file_path <- file.path(data_path, "population","unzipped_files","tifs")
+  files <- list.files(path = file_path, pattern = "*", all.files = FALSE, full.names = FALSE, recursive = FALSE)
+  files_NY <- files[which(substr(files,11,12) == "36")]
+  pop_data_list <- lapply(paste0(file_path,"/",files_NY),rast)
+  
+  #Combine them into a state
+  merged_raster <- terra::merge(pop_data_list[[1]], pop_data_list[[2]], pop_data_list[[3]], 
+                                pop_data_list[[4]], pop_data_list[[5]], pop_data_list[[6]], 
+                                pop_data_list[[7]], pop_data_list[[8]], pop_data_list[[9]], 
+                                pop_data_list[[10]], pop_data_list[[11]], pop_data_list[[12]], 
+                                pop_data_list[[13]], pop_data_list[[14]], pop_data_list[[15]], 
+                                pop_data_list[[16]], pop_data_list[[17]], pop_data_list[[18]], 
+                                pop_data_list[[19]], pop_data_list[[20]], pop_data_list[[21]], 
+                                pop_data_list[[22]], pop_data_list[[23]], pop_data_list[[24]], 
+                                pop_data_list[[25]], pop_data_list[[26]], pop_data_list[[27]], 
+                                pop_data_list[[28]], pop_data_list[[29]], pop_data_list[[30]], 
+                                pop_data_list[[31]], pop_data_list[[32]], pop_data_list[[33]], 
+                                pop_data_list[[34]], pop_data_list[[35]], pop_data_list[[36]], 
+                                pop_data_list[[37]], pop_data_list[[38]], pop_data_list[[39]], 
+                                pop_data_list[[40]], pop_data_list[[41]], pop_data_list[[42]], 
+                                pop_data_list[[43]], pop_data_list[[44]], pop_data_list[[45]], 
+                                pop_data_list[[46]], pop_data_list[[47]], pop_data_list[[48]], 
+                                pop_data_list[[49]], pop_data_list[[50]], pop_data_list[[51]], 
+                                pop_data_list[[52]], pop_data_list[[53]], pop_data_list[[54]], 
+                                pop_data_list[[55]], pop_data_list[[56]], pop_data_list[[57]], 
+                                pop_data_list[[58]], pop_data_list[[59]], pop_data_list[[60]], 
+                                pop_data_list[[61]], pop_data_list[[62]])
+  return(merged_raster)
+}
+
+
+#Filter buildings through GPW
+Building_filter <- function(merged_raster){
+  sf_use_s2(FALSE)
+  
+  #Read building data
+  if (!file.exists(file.path(data_path, "buildings", "NewYork.geojson.zip"))) {
+    url <- "https://usbuildingdata.blob.core.windows.net/usbuildings-v2/NewYork.geojson.zip"
+    destfile <- file.path(data_path, "buildings", "NewYork.geojson.zip")
+    download.file(url, destfile, mode = "wb")
+  }
+  if (!file.exists(file.path(data_path, "buildings", "NewYork.geojson"))){
+    unzip(destfile, exdir = file.path(data_path, "buildings"))
+  }
+  
+  BUILDINGS <- st_read(file.path(data_path, "buildings", "NewYork.geojson")) 
+  BUILDINGS_CENTROID <- st_centroid(BUILDINGS)
+  
+  # Project merged raster
+  merged_raster_project <- terra::project(merged_raster, crs(BUILDINGS_CENTROID))
+  # sum(merged_raster_project[], na.rm=T)
+  building_with_pop <- exact_extract(merged_raster_project,BUILDINGS, append_cols = T, 
+                                     fun = function(values,coverage_fractions){sum(values*coverage_fractions, na.rm = T)})
+  
+  building_pop <- building_with_pop$result
+  building_area <- st_area(BUILDINGS)
+  BUILDINGS_CENTROID$population <- building_pop
+  BUILDINGS_CENTROID$area <- building_area
+  
+  gpw_filtered_buildings <- BUILDINGS_CENTROID[BUILDINGS_CENTROID$population > 0,]
+  # st_write(gpw_filtered_buildings, 
+  #          file.path(data_path, "buildings", "filtered_buildings.geojson"), 
+  #          driver = "GeoJSON")
+  # uer_communities = st_read(here(DATA_DATADIR, "Uploaded Files", "communites_transformed.geojson"))
+  
+  return(gpw_filtered_buildings)
+}
+

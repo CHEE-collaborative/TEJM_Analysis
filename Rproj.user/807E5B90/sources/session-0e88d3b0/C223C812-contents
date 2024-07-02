@@ -1,0 +1,232 @@
+library(lqmm)
+library(tidyverse)
+
+
+
+#Median Income thresholds: 50000, 70000, 90000
+
+data_table_cat <- readRDS("/home/xz578/TEJM/LQMM3/New_Energy/data_table_cat.rds")%>%
+  arrange(year, month) %>%
+  group_by(GEOID) %>%
+  mutate(total_accounts = ifelse(total_accounts == 0, NA, total_accounts),
+         True_Energy = ifelse(True_Energy == 0, NA, True_Energy)) %>%
+  fill(total_accounts, .direction = "downup") %>%
+  fill(total_accounts, .direction = "updown") %>%
+  mutate(Total_Energy = ifelse(is.na(True_Energy), total_energy_times_area, True_Energy))
+
+
+# #api key for census tract data
+# census_api_key("bdfb48e7e8ca85e6c72d18481ec5c0951b9c0abf", install = TRUE, overwrite = TRUE)
+# 
+# energy_file <- here("Desktop//Yale//Project//EHS//23.10.8//Energy_Data")
+# GEOGRAPHIC_RESOLUTION = "zcta"
+# 
+# get_acs_decennial <- function(geography,geometry = FALSE){
+#   acs_year <- get_decennial(
+#     geography = geography,
+#     variables = c("Total_pop" = "P001001"),
+#     year = 2010,
+#     output = "wide",
+#     geometry = geometry,
+#     state = 36
+#   )
+#     #st_transform(crs = st_crs(4326)) %>%
+#     # filter(!st_is_empty(.)) %>%
+# 
+#   return(acs_year)
+# }
+# 
+# shape_files_zcta <- get_acs_decennial(GEOGRAPHIC_RESOLUTION, geometry = T) %>%
+#   select(GEOID, geometry) %>%
+#   mutate(GEOID = substr(GEOID, 3,7))
+# # test <- st_drop_geometry(shape_files_zcta)
+# zcta_centroids <- st_centroid(shape_files_zcta)
+# 
+# shape_files_county <- get_acs_decennial("county", geometry = T) %>%
+#   mutate(county_fips = GEOID) %>%
+#   select(county_fips, NAME, geometry)
+# # shape_files_county$NAME
+# 
+# #R1: Western New York, Greate Lakes Plain
+# #R2: Catskill Mountains and West Hudson River Valley
+# #R3: Sounthern Tier
+# #R4: New York City and Long Island
+# #R5: East Hudson and Mohawk River Valleys
+# #R6: Tug Hill Plateau
+# #R7: Adirondack Mountains
+# county_to_climate_region <- c("R5", "R3", "R4", "R3", "R1", "R1", "R3", "R2", "R7", "R7",
+#                               "R6", "R1", "R5", "R4", "R1", "R5", "R6", "R2", "R6", "R3",
+#                               "R4", "R5", "R4", "R2", "R7", "R5", "R5", "R1", "R1", "R1",
+#                               "R5", "R5", "R3", "R3", "R7", "R5", "R3", "R5", "R7", "R5",
+#                               "R1", "R2", "R5", "R4", "R6", "R1", "R5", "R4", "R4", "R2",
+#                               "R7", "R5", "R2", "R3", "R1", "R3", "R3", "R3", "R1", "R1",
+#                               "R1", "R2")
+# 
+# shape_files_county$Climate_Region <- county_to_climate_region
+# 
+# # table(county_to_climate_region)
+# 
+# zcta_county_match <- st_join(zcta_centroids, shape_files_county, join = st_within) %>% st_drop_geometry()
+# # 
+# zcta_county_match <- zcta_county_match %>%
+#   mutate(county_fips = ifelse(GEOID == "13693" |GEOID == "13685", "36045", county_fips),
+#          NAME = ifelse(GEOID == "13693"|GEOID == "13685", "Jefferson County, New York", NAME),
+#          Climate_Region = ifelse(GEOID == "13693"|GEOID == "13685", "R6", Climate_Region)) %>%
+#   mutate(county_fips = ifelse(GEOID == "11957" |GEOID == "11939", "36103", county_fips),
+#          NAME = ifelse(GEOID == "11957" |GEOID == "11939", "Suffolk County, New York", NAME),
+#          Climate_Region = ifelse(GEOID == "11957" |GEOID == "11939", "R4", Climate_Region))
+# # 
+# saveRDS(zcta_county_match, "/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+
+
+zcta_county_match <- readRDS("/home/xz578/TEJM/LQMM3/zcta_county_climate_match.rds")
+data_table_cat <- data_table_cat %>%
+  left_join(zcta_county_match, by = "GEOID") %>%
+  mutate(groups_county = paste0(groups, "_", county_fips)) %>%
+  mutate(groups_climate = paste0(groups, "_", Climate_Region)) %>%
+  mutate(Normalized_Energy = ifelse(is.na(total_accounts),
+                                    Total_Energy/Households,
+                                    Total_Energy/total_accounts
+  )) %>%
+  filter(!is.na(Normalized_Energy))
+
+taus <- c(1,5,9)/10
+# tau <- 0.5
+
+# qm.effect_HICDD1 <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                           Median_Income_cat + Avg_Household_Size + 
+#                           Households_scaled+ 
+#                           # county_fips +
+#                           # Avg_Household_Size*Households_scaled + 
+#                           Median_Income_cat*Households_scaled +
+#                            HICDD*Median_Income_cat,
+#                         random =  ~ 1,
+#                         group= factor(groups_county),
+#                         data = data_table_cat,
+#                         tau = 0.5,
+#                         control = lqmmControl(method = "df", 
+#                                               UP_max_iter = 3000, 
+#                                               LP_max_iter = 1000,
+#                                               UP_tol = 1e-4,
+#                                               LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+# test <- summary(qm.effect_HICDD1)
+
+
+# qm.effect_HICDD2 <- lqmm(fixed = Total_Energy ~ HICDD + 
+#                            Median_Income_cat + Avg_Household_Size + 
+#                            Households_scaled+ 
+#                            # county_fips +
+#                            Climate_Region +
+#                            HICDD*Median_Income_cat + 
+#                            Avg_Household_Size*Households_scaled + 
+#                            Median_Income_cat*Households_scaled,
+#                          random =  ~ 1,
+#                          group= factor(groups_county),
+#                          data = data_table_cat,
+#                          tau = 0.5,
+#                          control = lqmmControl(method = "df", 
+#                                                UP_max_iter = 3000, 
+#                                                LP_max_iter = 1000,
+#                                                UP_tol = 1e-4,
+#                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+
+for(tau in taus){
+  print(tau)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_cat,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_1_",tau,".rds"))
+  summary_HICDD <- summary(qm.effect_HICDD)
+  saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_summary_HICDD_categorical_income_",tau,".rds"))
+  
+  # qm.effect_HICDD <- lqmm(fixed = Total_Energy ~HICDD + 
+  #                           Median_Income_cat + Avg_Household_Size + 
+  #                           Households_scaled+
+  #                           Avg_Household_Size*Households_scaled +
+  #                           HICDD*Median_Income_cat,
+  #                         random =  ~ 1,
+  #                         group= factor(groups_county),
+  #                         data = data_table_cat,
+  #                         tau = tau,
+  #                         control = lqmmControl(method = "df", 
+  #                                               UP_max_iter = 3000, 
+  #                                               LP_max_iter = 1000,
+  #                                               UP_tol = 1e-4,
+  #                                               LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  # 
+  # # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_1_",tau,".rds"))
+  # summary_HICDD <- summary(qm.effect_HICDD)
+  # saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/New_Energy/model_total_summary_HICDD_categorical_income_",tau,".rds"))
+  
+  # qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups + HICDD + 
+  #                           Median_Income_cat + 
+  #                           Households_scaled+ 
+  #                           # county_fips +
+  #                           HICDD*Median_Income_cat
+  #                         ,
+  #                         random =  ~ 1,
+  #                         group= factor(county_fips),
+  #                         data = data_table_cat,
+  #                         tau = tau,
+  #                         control = lqmmControl(method = "df", 
+  #                                               UP_max_iter = 3000, 
+  #                                               LP_max_iter = 1000,
+  #                                               UP_tol = 1e-4,
+  #                                               LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  # 
+  # # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_1_",tau,".rds"))
+  # summary_HICDD <- summary(qm.effect_HICDD)
+  # saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_categorical_income_2_",tau,".rds"))
+  # 
+  # 
+  # qm.effect_HICDD <- lqmm(fixed = Total_Energy ~ groups+HICDD + 
+  #                           Median_Income_cat + 
+  #                           Households_scaled+ 
+  #                           # county_fips +
+  #                           HICDD*Median_Income_cat,
+  #                         random =  ~ 1 + Households_scaled,
+  #                         group= factor(county_fips),
+  #                         data = data_table_cat,
+  #                         tau = tau,
+  #                         control = lqmmControl(method = "df", 
+  #                                               UP_max_iter = 3000, 
+  #                                               LP_max_iter = 1000,
+  #                                               UP_tol = 1e-4,
+  #                                               LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  # 
+  # # saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_1_",tau,".rds"))
+  # summary_HICDD <- summary(qm.effect_HICDD)
+  # saveRDS(summary_HICDD, paste0("/home/xz578/TEJM/LQMM3/new_models/model_summary_HICDD_categorical_income_3_",tau,".rds"))
+  
+}
+
+taus <- c(1:9)/10
+for(tau in taus){
+  print(tau)
+  qm.effect_HICDD <- lqmm(fixed = Normalized_Energy ~HICDD + 
+                            Median_Income_cat + Avg_Household_Size + 
+                            HICDD*Median_Income_cat,
+                          random =  ~ 1,
+                          group= factor(groups_county),
+                          data = data_table_cat,
+                          tau = tau,
+                          control = lqmmControl(method = "df", 
+                                                UP_max_iter = 6000, 
+                                                LP_max_iter = 3000,
+                                                UP_tol = 1e-4,
+                                                LP_tol_ll = 1e-4, LP_tol_theta = 1e-4))
+  
+  saveRDS(qm.effect_HICDD, paste0("/home/xz578/TEJM/LQMM3/Sensitivity/model_imputed_",tau,".rds"))
+  
+  
+}

@@ -1,0 +1,286 @@
+---
+title: "Building Analysis"
+author: "Weixi Wu"
+date: "2023-01-24"
+output: html_document
+---
+
+```{r}
+install.packages("geojsonR")
+install.packages("geojsonio")
+library(geojsonio)
+library(geojsonR)
+library(geojsonsf)
+library(here)
+library(maptools)
+library(raster)
+library(rgdal)
+library(rgeos)
+library(arsenal)
+library(here)
+library(sf)
+library(sp)
+```
+
+
+```{r}
+#overview of the data & different ways to read the bldg data
+
+#bldg <- readOGR(dsn = "/home/ww428/Documents/TEJM/NewYork.geojson")
+#bldg <- FROM_GeoJson(url_file_string = "NewYork.geojson")
+
+bldg <- st_read("/home/ww428/Documents/TEJM/NewYork.geojson")
+summary(bldg)
+```
+
+
+```{r}
+#convert the bldg polygons into centroids
+
+sf_use_s2(FALSE)
+bldg_ctr <- st_centroid(bldg)
+```
+
+```{r}
+#read grided population of the world data
+
+str_name <- 'gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec.tif' 
+imported_raster <- raster(str_name)
+summary(imported_raster)
+```
+
+
+```{r}
+#subset the population to NYS using NYS shapefile
+
+nyshp <- readOGR(dsn = "/home/ww428/Documents/TEJM/NYS_shp/tl_2021_36_tract.shp")
+r2 <- crop(imported_raster, extent(nyshp))
+r3 <- mask(r2, nyshp)
+
+## Check that it worked
+plot(r3)
+#plot(nyshp, add=TRUE, lwd=2)
+```
+
+
+```{r}
+#population inside buildings
+
+Test <- as(r3,'SpatialPolygonsDataFrame')
+Tst2 <- st_as_sf(Test)
+Tst3 <- na.omit(Tst2)
+pop_in_bldg3 <- st_intersection(Tst3, bldg_ctr)
+```
+
+```{r}
+#removing buildings of 0 population
+
+pop_in_bldg3 <- pop_in_bldg3[pop_in_bldg3$gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec != 0, ]
+plot(pop_in_bldg3['gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec'], pch = 20)
+```
+
+```{r}
+#apply the address filter
+
+nys_ad <- st_read("/home/ww428/Documents/TEJM/us/ny/statewide-addresses-state.geojson")
+summary(nys_ad)
+
+pop_in_bldg_tst <- st_intersection(bldg, nys_ad)
+```
+
+```{r}
+#address filter + removing buildings of population <1
+
+pop_in_bldg4 <- st_intersection(Tst3, pop_in_bldg_tst)
+pop_in_bldg4 <- pop_in_bldg4[pop_in_bldg4$gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec > 1, ]
+plot(pop_in_bldg4['gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec'], pch = 20)
+```
+
+
+
+```{r}
+#get new york population at the census tract level
+
+library(tidycensus)
+
+ny_pop <- get_decennial(geography = "county",
+                                         variables = c("Total_pop" = "P001001"),
+                                         year = 2010,
+                                         output = "wide",
+                                         geometry = T, 
+                                         state = 36) %>%
+  st_transform(., crs = st_crs(4326)) %>%
+  filter(!st_is_empty(.))
+
+ny_pop
+```
+
+```{r}
+#join the census population data and the building data after filtering
+
+bldg_acs <- st_join(pop_in_bldg4, ny_pop, by = 'geometry')
+```
+
+```{r}
+#Population reapportionment after applying for address filter & removing pop <1 bldgs
+
+table(bldg_acs$NAME)
+pop_reap <- data.frame(table(bldg_acs$NAME))
+colnames(pop_reap) <- c("NAME", "Freq")
+head(pop_reap)
+
+#Kings, New York and Richmond counties were excluded (open address dataset does not have these 3 counties)
+pop_reap <- merge(ny_pop, pop_reap, by = "NAME")
+pop_reap$pop_per_bldg <- pop_reap$Total_pop/pop_reap$Freq
+head(pop_reap)
+```
+
+```{r}
+#Applying for address filter & removing pop =0 bldgs
+
+pop_in_bldg5 <- st_intersection(Tst3, pop_in_bldg_tst)
+pop_in_bldg5 <- pop_in_bldg5[pop_in_bldg5$gpw_v4_population_count_adjusted_to_2015_unwpp_country_totals_rev11_2020_30_sec != 0, ]
+
+bldg_acs2 <- st_join(pop_in_bldg5, ny_pop, by = 'geometry')
+```
+
+```{r}
+#Population reapportionment after applying for address filter & removing pop =0 bldgs
+table(bldg_acs2$NAME)
+pop_reap2 <- data.frame(table(bldg_acs2$NAME))
+colnames(pop_reap2) <- c("NAME", "Freq")
+head(pop_reap2)
+
+#Kings, New York and Richmond counties were excluded (open address dataset does not have these 3 counties)
+pop_reap2 <- merge(ny_pop, pop_reap2, by = "NAME")
+pop_reap2$pop_per_bldg <- pop_reap2$Total_pop/pop_reap2$Freq
+head(pop_reap2)
+
+```{r}
+#apply the address filter
+
+nys_ad <- st_read("/home/ww428/Documents/TEJM/us/ny/statewide-addresses-state.geojson")
+summary(nys_ad)
+#plot(nys_ad)
+```
+
+```{r}
+#make a small buffer around the point and then polygons to point intersection
+pop_in_bldg4 <- st_intersection(pop_in_bldg3, nys_ad)
+```
+
+
+```{r}
+#aggregate to county level
+
+categories <- "Albany County|Allegany County|Bronx County|Broome County|Cattaraugus County|Cayuga County|Chautauqua County|Chemung County|Chenango County|Clinton County|Columbia County|Cortland County|Delaware County|Dutchess County|Erie County|Essex County|Franklin County|Fulton County|Genesee County|Greene County|Hamilton County|Herkimer County|Jefferson County|Kings County|Lewis County|Livingston County|Madison County|Monroe County|Montgomery County|Nassau County|New York County|Niagara County|Oneida County|Onondaga County|Ontario County|Orange County|Orleans County|Oswego County|Otsego County|Putnam County|Queens County|Rensselaer County|Richmond County|Rockland County|Saint Lawrence County|Saratoga County|Schenectady County|Schoharie County|Schuyler County|Seneca County|Steuben County|Suffolk County|Sullivan County|Tioga County|Tompkins County|Ulster County|Warren County|Washington County|Wayne County|Westchester County|Wyoming County|Yates County"
+
+#population per building: address filter & removing bldg with <1 pop
+pop_reap_county <- pop_reap %>% 
+  mutate(NAME = tolower(str_extract((NAME), categories))) %>%
+  group_by(NAME) %>%
+  summarise(sum(Freq), sum(Total_pop)) 
+
+pop_reap_county$pop_per_bldg <- pop_reap_county$`sum(Total_pop)`/pop_reap_county$`sum(Freq)`
+head(pop_reap_county)
+```
+
+```{r}
+#population per building: address filter & removing bldg with 0 pop
+
+pop_reap_county2 <- pop_reap2 %>% 
+  mutate(NAME = tolower(str_extract((NAME), categories))) %>%
+  group_by(NAME) %>%
+  summarise(sum(Freq), sum(Total_pop)) 
+
+pop_reap_county2$pop_per_bldg <- pop_reap_county2$`sum(Total_pop)`/pop_reap_county2$`sum(Freq)`
+head(pop_reap_county2)
+```
+
+```{r}
+#population per building: no address filter & removing bldg with 0 pop
+
+pop_reap_county3 <- pop_reap3 %>% 
+  mutate(NAME = tolower(str_extract((NAME), categories))) %>%
+  group_by(NAME) %>%
+  summarise(sum(Freq), sum(Total_pop)) 
+
+pop_reap_county3$pop_per_bldg <- pop_reap_county3$`sum(Total_pop)`/pop_reap_county3$`sum(Freq)`
+head(pop_reap_county3)
+```
+
+
+```{r}
+
+#aggregate to the county level (use tidycensus to get NYS county map)
+
+#turn everything into functions to iterate 
+#average exposure based on race/ethnicity
+
+#check the number of residential buildings in NY
+#after filtering, put population in the buildings at the census tract level (not county level), population in each tract/no. of buildings in each tract
+#look into census data (no. of people per household in each census tract)
+
+#tract level instead of county level for building dataset
+#fact check if no. of bldgs make sense
+#table of relative difference between race/ethnicity at county level but using the underline tract data (white as a reference)
+#R for data science (Chapter 19)
+
+#fact check using urban development website
+#check the number of residential buildings in every county e.g. albany county ny
+```
+
+```{r}
+#check what variables acs has
+
+vars <- load_variables(year = 2010,
+                       dataset = "acs5",
+                        cache = TRUE)
+vars %>% filter(str_detect(label, "Estimate!!Total"))
+```
+
+
+```{r}
+#get census total population and housing units to compare population per housing unit
+
+pop_hh <- get_acs(geography = "tract",
+                      state = 36,
+                      geometry = FALSE,
+                      variables = c(total_pop = "B00001_001",
+                                    housing_units = "B00002_001"),
+                      year = 2010,
+                      output = "tidy",
+                      survey = "acs5") 
+
+pop_hh
+
+pop_hh_gt <- pivot_wider(pop_hh, names_from = variable, values_from = estimate)
+pop_hh_gt <- filter_if(pop_hh_gt, is.numeric, all_vars((.) != 0))
+
+pop_hh_gt$pp_per_hh <- pop_hh_gt$total_pop/pop_hh_gt$housing_units
+
+#aggregate to county level (no need)
+pop_hh_county <- pop_hh_gt %>% 
+  mutate(NAME = tolower(str_extract((NAME), categories))) %>%
+  group_by(NAME) %>%
+  summarise(tot_pop = sum(total_pop, na.rm = T), tot_hou = sum(housing_units, na.rm = T)) 
+pop_hh_county$pp_per_hh <- pop_hh_county$tot_pop/pop_hh_county$tot_hou
+head(pop_hh_county)
+```
+
+```{r}
+#compare population per building from calculation and population per housing unit from census tracts at the tract level
+
+compare2df <- merge(pop_reap3, pop_hh_gt, by = "GEOID")
+head(compare2df)
+compare2df$df <- ((compare2df$pop_per_bldg-compare2df$pp_per_hh)/compare2df$pp_per_hh)*100
+```
+
+
+```{r}
+#read NAD data
+
+nad <- st_read(dsn="/home/ww428/Documents/TEJM/NAD_r13.gdb")
+summary(nad)
+```
+
