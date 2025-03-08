@@ -72,7 +72,7 @@ Building_filter <- function(merged_raster){
   
   #Read building data
   if (!file.exists(file.path(data_path, "buildings", "NewYork.geojson.zip"))) {
-    url <- "https://usbuildingdata.blob.core.windows.net/usbuildings-v2/NewYork.geojson.zip"
+    url <- "https://minedbuildings.z5.web.core.windows.net/legacy/usbuildings-v2/NewYork.geojson.zip"
     destfile <- file.path(data_path, "buildings", "NewYork.geojson.zip")
     download.file(url, destfile, mode = "wb")
   }

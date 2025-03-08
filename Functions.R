@@ -57,12 +57,13 @@ Demographics_Merge <-function(Processed_Energy, HICDD){
   
 }
 
-Main_Analysis <- function(Merged_Data,Energy_community){
+Main_Analysis <- function(Merged_Data, Energy_community){
   
   if(!dir.exists(file.path(here(), "Outputs"))){dir.create(file.path(here(), "Outputs"))}
   
   # Energy Overview
   Figure_1(Merged_Data)
+  Figure_2(Merged_Data)  # Add this line to call the new function
   # Main Analysis
   Main_Model(Merged_Data)
   

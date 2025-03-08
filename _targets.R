@@ -27,7 +27,8 @@ tar_option_set(
     "exactextractr",
     "dplyr",
     "purrr",
-    "zoo"
+    "zoo",
+    "patchwork"
   ),
   format = 'rds', 
   workspace_on_error = TRUE

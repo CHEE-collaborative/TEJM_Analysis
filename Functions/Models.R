@@ -4,9 +4,9 @@ model_print <- function(Model){
   
   x <- Model$tTable
   Names <- rownames(x)
-  Estimates <- x[,1] * 1000
-  lower <- x[,3] * 1000
-  upper <- x[,4] * 1000
+  Estimates <- x[,1] * 1000* 268.51
+  lower <- x[,3] * 1000* 268.51
+  upper <- x[,4] * 1000* 268.51
   
   p_values <- x[,5]
   significance <- ifelse(p_values < 0.001, "***",
@@ -24,9 +24,9 @@ model_print_lmer <- function(Model){
   
   x <- Model$coefficients
   Names <- rownames(x)
-  Estimates <- x[,1] * 1000
-  lower <- x[,1]*1000 - 1.96*x[,2]*1000
-  upper <- x[,1]*1000 + 1.96*x[,2]*1000
+  Estimates <- x[,1] * 1000* 268.51
+  lower <- x[,1]*1000* 268.51 - 1.96*x[,2]*1000* 268.51
+  upper <- x[,1]*1000* 268.51 + 1.96*x[,2]*1000* 268.51
   
   p_values <- 2 * (1 - pnorm(abs(x[,3])))
   significance <- ifelse(p_values < 0.001, "***",
@@ -692,4 +692,140 @@ Community_Data_Generate <- function(Energy_community){
   filter(!is.na(Normalized_Energy))
   
   return(data_table_final)
+}
+
+Figure_2 <- function(Merged_Data){
+  
+  climate_zone4 <- tibble(clim_zone = rep("Mixed Humid",8), 
+                          county_fips = c("36005", # Bronx
+                                          "36047", # Kings
+                                          "36059", # Nassau
+                                          "36061", # New York
+                                          "36081", # Queens
+                                          "36085", # Richmond
+                                          "36103", # Suffolk
+                                          "36119")) # Westchester
+  
+  # Climate Zone 5 Counties
+  climate_zone5 <- tibble(clim_zone = rep("Cool Humid",28),
+                          county_fips = c("36001", # Albany
+                                          "36011", # Cayuga
+                                          "36013", # Chautauqua
+                                          "36015", # Chemung
+                                          "36021", # Columbia
+                                          "36023", # Cortland
+                                          "36027", # Dutchess
+                                          "36029", # Erie
+                                          "36037", # Genesee
+                                          "36039", # Greene
+                                          "36051", # Livingston
+                                          "36055", # Monroe
+                                          "36063", # Niagara
+                                          "36067", # Onondaga
+                                          "36069", # Ontario
+                                          "36071", # Orange
+                                          "36073", # Orleans
+                                          "36075", # Oswego
+                                          "36079", # Putnam
+                                          "36083", # Rensselaer
+                                          "36087", # Rockland
+                                          "36091", # Saratoga
+                                          "36093", # Schenectady
+                                          "36099", # Seneca
+                                          "36107", # Tioga
+                                          "36115", # Washington
+                                          "36117", # Wayne
+                                          "36123")) # Yates
+  
+  # Climate Zone 6 Counties
+  climate_zone6 <- tibble(clim_zone = rep("Cold Humid",26),
+                          county_fips = c("36003", # Allegany
+                                          "36007", # Broome
+                                          "36009", # Cattaraugus
+                                          "36017", # Chenango
+                                          "36019", # Clinton
+                                          "36025", # Delaware
+                                          "36031", # Essex
+                                          "36033", # Franklin
+                                          "36035", # Fulton
+                                          "36041", # Hamilton
+                                          "36043", # Herkimer
+                                          "36045", # Jefferson
+                                          "36049", # Lewis
+                                          "36053", # Madison
+                                          "36057", # Montgomery
+                                          "36065", # Oneida
+                                          "36077", # Otsego
+                                          "36095", # Schoharie
+                                          "36097", # Schuyler
+                                          "36089", # St. Lawrence
+                                          "36101", # Steuben
+                                          "36105", # Sullivan
+                                          "36109", # Tompkins
+                                          "36111", # Ulster
+                                          "36113", # Warren
+                                          "36121")) # Wyoming
+  
+  clim_zones <- bind_rows(climate_zone4, climate_zone5, climate_zone6)
+  
+  Merged_Data1 <- Merged_Data %>%
+    left_join(., clim_zones, by = "county_fips")
+  
+  zips_for_plot <- Merged_Data1 %>%
+    filter(month == "7", year == "2018") %>%
+    group_by(clim_zone, Median_Income_cat) %>%
+    mutate(percent_rank = percent_rank(Normalized_Energy),
+           dist_to_median = percent_rank-.5) %>%
+    filter(dist_to_median == min(abs(dist_to_median))) %>%
+    filter(Median_Income_cat == "<=50k"|Median_Income_cat == ">90k") %>%
+    ungroup() %>%
+    dplyr::select(GEOID, Median_Income_cat) %>%
+    rename(income_cat = Median_Income_cat)
+  
+  hist <- ggplot(data = Merged_Data1) + 
+    geom_histogram(aes(x = HICDD), bins = 15) + 
+    #geom_density(aes(x = HICDD)) + 
+    facet_grid(~clim_zone) + 
+    ylab(label = "Count\n(ZCTA-months)")+
+    xlab("Heat Index Cooling Degree Days (F)") + 
+    xlim(0,950) +
+    theme_minimal() + 
+    theme(strip.text.x = element_blank(),
+          text = element_text(size = 16))   #remove y axis ticks) 
+  
+  data_for_plots <- Merged_Data1 %>%
+    filter(GEOID %in% zips_for_plot$GEOID) %>%
+    left_join(., zips_for_plot, by = "GEOID") %>%
+    mutate(Normalized_Energy = Normalized_Energy*1000)
+  
+  labels1 <- data_for_plots %>% 
+    group_by(GEOID) %>%
+    slice_sample(n=1) %>% 
+    dplyr::select(GEOID, income_cat, clim_zone) 
+  
+  labels2 <- tibble(GEOID = c("10459", "10974", "11363", "12078", "13341", "14203"),
+                    HICDD = c(750, 100, 100, 300, 100, 625),
+                    Normalized_Energy = c(200, 900, 500, 500, 800, 500))
+  
+  labels3 <- labels1 %>% left_join(., labels2, by = "GEOID")
+  
+  plot1 <- ggplot() + 
+    geom_point(data = data_for_plots, aes(x = HICDD, y = Normalized_Energy, color = income_cat)) + 
+    geom_quantile(data = data_for_plots, aes(x = HICDD, y = Normalized_Energy, color = income_cat), quantiles = 0.5) +
+    geom_label(data = labels3, aes(label = GEOID, x = HICDD, y = Normalized_Energy, color = income_cat)) + 
+    facet_grid(~clim_zone) + 
+    xlim(0,950) +
+    scale_color_discrete(guide = guide_legend(reverse = TRUE))+
+    ylab("ZCTA energy use (kWh/household)") +
+    theme_bw() + 
+    theme(axis.title.x = element_blank(),
+          text = element_text(size = 16),
+          legend.position="none") +
+    labs(color = "Income\ncategory")
+  
+  fig2 <- plot1/hist +
+    plot_layout(heights = c(4, 1)) +
+    plot_annotation(tag_levels = 'A')
+  
+  ggsave(file.path(here(), "Outputs","Fig2.png"), plot = fig2, width = 16, height = 8, dpi = 300)
 }
