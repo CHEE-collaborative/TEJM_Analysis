@@ -2,7 +2,7 @@
 
 This repository contains the analysis pipeline for a study examining disparities in residential electricity consumption during the cooling season across New York State, with a focus on income, racial polarization, and joint race-income concentration as drivers of energy inequality under extreme heat.
 
-The pipeline is built with the [`targets`](https://docs.ropensci.org/targets/) framework for reproducibility and is part of the [REACH (Research on Energy Air Pollution Climate Housing and Health)] project at Yale University.
+The pipeline is built with the [`targets`](https://docs.ropensci.org/targets/) framework for reproducibility and is part of the [REACH (Research on Energy Air Pollution Climate Housing and Health)] team at Yale School of Public Health.
 
 ---
 
@@ -286,7 +286,6 @@ All outputs are written to `Outputs/` by the pipeline:
 | `income_model_results.csv` | LQMM + LMER coefficients for income × HICDD interactions |
 | `ice_model_results.csv` | LQMM + LMER coefficients for race-only ICE × HICDD interactions |
 | `ice_income_model_results.csv` | LQMM + LMER coefficients for joint race-income ICE × HICDD |
-| `lmer_r2_values.csv` | Marginal and conditional R² for all LMER models |
 | `figure_energy_by_income.png` | Monthly electricity use by income group, 2016–2020 |
 | `figure_hicdd_distribution.png` | HICDD distribution and energy response by climate zone |
 
