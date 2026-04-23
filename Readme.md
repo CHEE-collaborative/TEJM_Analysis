@@ -2,7 +2,7 @@
 
 This repository contains the analysis pipeline for a study examining disparities in residential electricity consumption during the cooling season across New York State, with a focus on income, racial polarization, and joint race-income concentration as drivers of energy inequality under extreme heat.
 
-The pipeline is built with the [`targets`](https://docs.ropensci.org/targets/) framework for reproducibility and is part of the [REACH (Research on Energy and Climate Health)](https://reachyale.org) project at Yale University.
+The pipeline is built with the [`targets`](https://docs.ropensci.org/targets/) framework for reproducibility and is part of the [REACH (Research on Energy Air Pollution Climate Housing and Health)] project at Yale University.
 
 ---
 
