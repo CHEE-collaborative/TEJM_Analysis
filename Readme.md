@@ -37,7 +37,7 @@ All ICE (Index of Concentration at the Extremes) measures use **households** as 
 │   ├── data_processing.R       # Merging, ICE computation, normalization
 │   ├── climate_processing.R    # HICDD calculation, climate zone assignment
 │   ├── imputation.R            # Dasymetric imputation (building footprints)
-│   ├── modeling.R              # LQMM/LMER fitting, results compilation, R²
+│   ├── modeling.R              # LQMM/LMER fitting, results compilation
 │   └── outputs.R               # Tables and figures
 ├── Data/
 │   ├── ZIPCodetoZCTACrosswalk2020UDS.xlsx
@@ -63,7 +63,6 @@ All ICE (Index of Concentration at the Extremes) measures use **households** as 
 | `targets`, `tarchetypes` | Pipeline orchestration |
 | `lqmm` | Linear quantile mixed models |
 | `lme4`, `lmerTest` | Linear mixed models |
-| `MuMIn` | Marginal/conditional R² (Nakagawa & Schielzeth) |
 | `tidycensus` | ACS demographic data |
 | `tigris` | TIGER/Line boundary files |
 | `daymetr` | Daymet climate data |
@@ -75,7 +74,7 @@ Install all pipeline dependencies at once:
 ```r
 install.packages(c(
   "targets", "tarchetypes", "qs2", "fst",
-  "lqmm", "lme4", "lmerTest", "MuMIn",
+  "lqmm", "lme4", "lmerTest",
   "tidycensus", "tigris", "daymetr",
   "sf", "terra", "lwgeom", "exactextractr",
   "tidyverse", "zoo", "patchwork",
@@ -199,7 +198,6 @@ Yale University
 | `targets`, `tarchetypes` | Pipeline orchestration |
 | `lqmm` | Linear quantile mixed models |
 | `lme4`, `lmerTest` | Linear mixed models |
-| `MuMIn` | Marginal/conditional R² (Nakagawa & Schielzeth) |
 | `tidycensus` | ACS demographic data |
 | `tigris` | TIGER/Line boundary files |
 | `daymetr` | Daymet climate data |
@@ -211,7 +209,7 @@ Install all pipeline dependencies at once:
 ```r
 install.packages(c(
   "targets", "tarchetypes", "qs2", "fst",
-  "lqmm", "lme4", "lmerTest", "MuMIn",
+  "lqmm", "lme4", "lmerTest",
   "tidycensus", "tigris", "daymetr",
   "sf", "terra", "lwgeom", "exactextractr",
   "tidyverse", "zoo", "patchwork",
@@ -271,7 +269,6 @@ To read any result without rerunning the pipeline:
 tar_read(results_all_models)      # Income model results
 tar_read(results_ice_all)         # Race-only ICE results
 tar_read(results_ice_income_all)  # Joint race-income ICE results
-tar_read(results_lmer_r2)         # LMER R² table
 ```
 
 ---
